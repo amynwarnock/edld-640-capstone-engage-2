@@ -1,0 +1,1159 @@
+---
+title:  |
+  ![](uo.png){width=2in}  
+  ![](cbar.png)  
+  Summary of Student Organization Involvement at the University of Oregon: 2021-2022 and Fall-Winter of 2022-2023
+author: 
+  name: Amy N. Warnock
+  affiliation: Office of Assessment and Research | Division of Student Life | University of Oregon
+output:
+  html_document:
+    toc: true
+    toc_depth: 6
+    toc_float: true
+    theme: paper
+editor_options: 
+  chunk_output_type: console
+---
+
+***For full functionality of features, please download this document and open it in your browser.***  
+
+**Suggested Citation**  
+Please use the following when referencing this document.
+
+Warnock, A. N. (`r format(Sys.Date(), "%Y")`). *Summary of Student Engage Data from 2021-2022 and 2022-2023 at the University of Oregon*. Office of Assessment and Research, Division of Student Life, University of Oregon. 
+
+**Contact Information**   
+If you have questions, feedback, or requests for additional information, please contact Amy Warnock at awarnoc7@uoregon.edu. 
+
+**Last Updated**   
+`r format(Sys.time(), "%B %d, %Y | %I:%M %p %Z")`
+
+___
+___
+___  
+
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = FALSE,
+                      warning = FALSE,
+                      message = FALSE,
+                      dpi = 300)
+
+#install.packages("reactable")
+#install.packages("reactablefmtr")
+#install.packages("highcharter")
+#install.packages("treemapify")
+#install.packages("d3treeR") # not availabe for this version of R
+
+library(tidyverse)
+library(here)
+library(rio)
+library(janitor)
+library(reactable)
+library(reactablefmtr)
+library(scales)
+library(viridis)
+library(plotly)
+library(treemap)
+library(ggtext)
+library(highcharter)
+# library(treemapify)
+
+```
+
+```{r wishlist-next-update, eval = FALSE}
+
+# Next steps and wish list of features, analyses, plots for (a) further additions (things I did not get to due to restrictions on time) and (b) when I update the report after Spring Term 2023:
+
+# Numbers of events over time
+
+# Breakdown of position types (disaggregate)
+
+# ggridges to visualize distributions of age and GPA by student org x year (facteted). Completed by parent org so graphs are not too long.
+
+# Calculate the number of students who are in both 21-22 and 22-23 datasets (X students were involved in both years, with X studnets unqiue to 21-22 and X students unique to 22-23). This is important for framing changes in composition between the two years. 
+
+# Terminology edits: update race/ethnicity descriptors (expanded -> fully disaggregated, collapsed -> combined), "Multiple Majors" -> "More than 1 Major".
+
+# Dashboard
+
+# Further clean and categorize the list of "Organization Created" roles. I screened the list for top leadership (president, vice president) roles, but there is more clean-up to be done. Create a crosswalk in Excel and update main data file once complete (instead of recoding each position name individually). Get confirmation on recoding from Julie Scroggins.
+
+# Figure out how to use a dropdown menu for plot selection instead of tabs. Will likely require Shiny. 
+
+# In the overall descriptive plots, add a new label grouping that displays a breakdown of the orgs (% of Top 10?, list of Top 10?, membership n of Top 10?) the specified demographic subgroup is a part of. For example, hovering over Figure 1 (% students x Student Level), when hover on "Undergraduate" for 2021-2022, you also get to see a list of the Top 10 orgs those students were in. Would be a neat feature for seeing and easily comparing that information (e.g., did the Top 10 for that category of students change in 2022-2023?). Alternatively, when hover on "Undergraduate" 21-22, see something like, "42% were in X Organization. 23% held leadership or officer positions."
+
+# Incorporate student population comparisons into tables and charts. How does disaggregated involvement align with disaggregated student population? E.g., most students were from Arts & Sciences college. What % of full student pop is from A&S college? How does it compare? Could facet my line plots by "Sample" and "Population."
+
+# treemaps: Figure out a solution for specifying color that doesn't throw an error message. Consider further editing color. 
+
+# Include an appendix with % missing for all demographic categories
+
+# Add bib file and cite references that way
+
+# Add full citations for all packages, rmarkdown/posit, R
+
+# Do brief literature search and include citations in the intro
+
+# Propensity score matching analysis: Identify "control" group of students not involved with student organizations and examine relationship between engagement and wellness, retention, graduation, post-grad outcomes
+
+```
+
+```{r load-data}
+
+engage_2021_clean <- readRDS(here("data", "engage_2021_clean.rds"))
+
+
+engage_2022_clean <- readRDS(here("data", "engage_2022_clean.rds"))
+
+org_details <- read.csv(here("data", "OrganizationDetails_ALL_deided.csv"), 
+                         na.strings = "") %>% 
+  clean_names()
+
+org_directory <- import(here("data", "OrganizationDirectoryAll_2023-03-01_deided.csv"),
+                    na.strings = c("")) %>% 
+  clean_names()
+
+```
+
+```{r functions}
+
+# function for tabulating ns and percentages of all demographics for specific year
+
+descrip_overall_prep <- function(data, 
+                                 level, # all year-specific variables 
+                                 class, 
+                                 major_mult,
+                                 major1_desc, 
+                                 college1_desc, 
+                                 age_binned, 
+                                 nontrad, 
+                                 hc) {
+  
+  a <- data %>% 
+    distinct(id, .keep_all = TRUE) %>% # filter to one row per student
+    tabyl({{level}}, show_na = FALSE) %>%  
+    mutate(Category = "Student Level") %>% 
+    rename(Subcategory = {{level}})
+  
+  b <- data %>% 
+    distinct(id, .keep_all = TRUE) %>% # filter to one row per student
+    tabyl({{class}}, show_na = FALSE) %>%  
+    mutate(Category = "Student Class") %>% 
+    rename(Subcategory = {{class}})
+  
+  c <- data %>%    
+    distinct(id, .keep_all = TRUE) %>% # filter to one row per student
+    tabyl({{major1_desc}}, show_na = FALSE) %>%  
+    mutate(Category = "Major (First Listed)") %>% 
+    rename(Subcategory = {{major1_desc}})
+  
+  d <- data %>% 
+    distinct(id, .keep_all = TRUE) %>% # filter to one row per student
+    tabyl({{major_mult}}, show_na = FALSE) %>%  
+    mutate(Category = "Multiple Majors") %>% 
+    rename(Subcategory = {{major_mult}})
+  
+  e <- data %>% 
+    distinct(id, .keep_all = TRUE) %>% # filter to one row per student
+    tabyl({{college1_desc}}, show_na = FALSE) %>%  
+    mutate(Category = "College of Major (First Listed)") %>% 
+    rename(Subcategory = {{college1_desc}})
+  
+  f <- data %>% 
+    distinct(id, .keep_all = TRUE) %>% # filter to one row per student
+    filter({{college1_desc}} != "Unclassified") %>% 
+    tabyl({{college1_desc}}, show_na = FALSE) %>%  
+    mutate(Category = "College of Major (First Listed, Unclassified Excluded)") %>%
+    rename(Subcategory = {{college1_desc}})
+  
+  g <- data %>% 
+    distinct(id, .keep_all = TRUE) %>% # filter to one row per student
+    tabyl({{hc}}, show_na = FALSE) %>%  
+    mutate(Category = "Honors College") %>% 
+    rename(Subcategory = {{hc}})
+  
+  h <- data %>% 
+    distinct(id, .keep_all = TRUE) %>% # filter to one row per student
+    tabyl(gi, show_na = FALSE) %>%  
+    mutate(Category = "Gender") %>% 
+    rename(Subcategory = gi)
+  
+  
+  i <- data %>% 
+    distinct(id, .keep_all = TRUE) %>% # filter to one row per student
+    tabyl(so, show_na = FALSE) %>%  
+    mutate(Category = "Sexuality") %>% 
+    rename(Subcategory = so)
+  
+  
+  j <- data %>% 
+    distinct(id, .keep_all = TRUE) %>% # filter to one row per student
+    tabyl(gi_so, show_na = FALSE) %>%  
+    mutate(Category = "Gender & Sexuality") %>% 
+    rename(Subcategory = gi_so)
+  
+  k <- data %>% 
+    distinct(id, .keep_all = TRUE) %>% # filter to one row per student
+    tabyl(re_exp, show_na = FALSE) %>%  
+    mutate(Category = "Race/Ethnicity Expanded") %>% 
+    rename(Subcategory = re_exp)
+  
+  l <- data %>% 
+    distinct(id, .keep_all = TRUE) %>% # filter to one row per student
+    tabyl(re_comb, show_na = FALSE) %>%  
+    mutate(Category = "Race/Ethnicity Collapsed") %>% 
+    rename(Subcategory = re_comb)
+  
+  m <- data %>% 
+    distinct(id, .keep_all = TRUE) %>% # filter to one row per student
+    tabyl({{age_binned}}, show_na = FALSE) %>%  
+    mutate(Category = "Age Range") %>% 
+    rename(Subcategory = {{age_binned}})
+  
+  n <- data %>% 
+    distinct(id, .keep_all = TRUE) %>% # filter to one row per student
+    tabyl({{nontrad}}, show_na = FALSE) %>%  
+    mutate(Category = "Nontraditional Status") %>% 
+    rename(Subcategory = {{nontrad}})
+  
+    
+  o <- data %>% 
+    distinct(id, .keep_all = TRUE) %>% # filter to one row per student
+    tabyl(resident, show_na = FALSE) %>%  
+    mutate(Category = "Oregon Residency Status") %>% 
+    rename(Subcategory = resident)
+  
+  p <- data %>% 
+    distinct(id, .keep_all = TRUE) %>% # filter to one row per student
+    tabyl(fg, show_na = FALSE) %>%  
+    mutate(Category = "First-Generation Status") %>% 
+    rename(Subcategory = fg)
+  
+  q <- data %>% 
+    distinct(id, .keep_all = TRUE) %>% # filter to one row per student
+    tabyl(fsc_desc_bin, show_na = FALSE) %>%  
+    mutate(Category = "Family Social Class") %>% 
+    rename(Subcategory = fsc_desc_bin)
+  
+  r <- data %>% 
+    distinct(id, .keep_all = TRUE) %>% # filter to one row per student
+    tabyl(sss_desc_bin, show_na = FALSE) %>%  
+    mutate(Category = "Global Socioeconomic Status") %>% 
+    rename(Subcategory = sss_desc_bin)
+  
+  
+  bind_rows(a, b, c, d, e, f, g, h, 
+            i, j, k, l, m, n, o, p, q, r) %>%
+    rename(Percentage = percent) %>%
+    select(Category,
+           Subcategory,
+           n,
+           Percentage) 
+}
+
+# function for moving descrips into reactable for 1 year
+
+descrip_reactable <- function(data) {
+
+  data %>% 
+    reactable(filterable = TRUE,
+              searchable = TRUE,
+              striped = TRUE,
+              highlight = TRUE,
+              bordered = TRUE,
+              resizable = TRUE,
+              compact = TRUE,
+              #wrap = FALSE,
+              defaultPageSize = 20,
+              defaultSorted = list(Percentage = "desc"),
+              # defaultColDef = colDef(
+              #   cell = data_bars(data, text_position = "none")),
+              height = 500,
+              width = 800,
+              defaultColDef = colDef(
+                footer = function(values, name) {
+                  htmltools::div(name, style = list(fontWeight = 600))
+                }),
+              groupBy = "Category",
+              columns = list(
+                # Category = 
+                #   colDef(width = 400),
+                n = 
+                  colDef(aggregate = "sum",
+                         format = colFormat(separators = TRUE),
+                         filterable = FALSE, 
+                         align = "right"),
+                Percentage = 
+                  colDef(filterable = FALSE, 
+                         align = "right",
+                         cell = data_bars(data,
+                                          text_position = "outside-base",
+                                          fill_color = "#25ab82",
+                                          fill_opacity = .8,
+                                          number_fmt = scales::label_percent(accuracy = 0.01)))
+              )
+    )
+}
+
+# percentage colDef - how to format if not using data bars
+# format = colFormat(percent = TRUE, digits = 2),
+
+descrip_ggplotly <- function(p) {
+  ggplotly({{p}},
+           height = 475,
+           width = 800) %>% 
+    layout(autosize = FALSE,
+           margin = list(autoexpand = FALSE, # took forever to figure out how to standardize plot sizes
+                         r = 300,
+                         l = 95),           # had to turn off all autosizing and determine h/w/margin by trial and error 
+           legend = list(orientation = 'v', 
+                         x = 1.04, 
+                         y = 0.05,
+                         xanchor = "left",
+                         yanchor = "bottom"))
+}
+                         
+
+```
+
+### Overview
+
+#### Purpose  
+
+Using data from the Campus Labs Engage online platform at the University of Oregon (UO), this document summarizes students' involvement with student organizations during the 2021-2022 academic year and Fall and Winter term of 2022-2023. The Engage website serves as the hub and interface for the administration, management, and student involvement for hundreds of UO student organizations and events, falling under the parent organizations of:  
+
+- [Associated Students of the University of Oregon (ASUO)](https://asuo.uoregon.edu/){target="_blank"}  
+- [Center for Student Involvement (CSI)](https://emu.uoregon.edu/csi){target="_blank"}  
+- [Club Sports](https://clubsports.uoregon.edu/join-club){target="_blank"}  
+- [Fraternity and Sorority Life (FSL)](https://dos.uoregon.edu/fsl){target="_blank"}  
+- [Student Life (SL)](https://studentlife.uoregon.edu/clubs){target="_blank"}  
+
+
+The goals of this project were to provide a more concrete understanding of:  
+- the organizations students are participating in,  
+- how they are involved and engaging,  
+- whether there are differences or gaps in level of involvement between student subgroups, and 
+- whether involvement or engagement has changed over time.  
+
+Although organization involvement data has been recorded in the Engage platform to some degree since 2012, the data are most complete and reliable starting with 2021-2022 due to updates in policies requiring and/or strongly encouraging student organization leaders' and members' use of the system. As such, the analyses were limited to the 2021-2022 year and the data available for 2022-2023 at the time this project was completed (September 2022 to early March 2023).
+
+#### About Student Organizations 
+
+For more information about organizations, including their descriptions and additional information, see Table 3.
+
+#### About the Engage Platform
+
+Student use of Engage includes the administration and management of organizations, creation and tracking of events and event attendance, and maintenance of leadership and member positions. Engage platform user accounts are automatically created for students upon matriculation to the UO. Member, officer, and leadership position status must be manually set by the student or organization administrators. For the majority of organizations, members self-select and there are not barriers to admission. Other organizations, such as Fraternities or Sororities, have closed member lists. Start date and end dates are logged for all positions. Importantly, membership does not necessarily reflect engagement with an organization as anyone who is interested in an open organization can join as a member. 
+
+#### Organization of Contents
+
+In the following tables and figures, student involvement is summarized and disaggregated by various student demographic characteristics (e.g., level, gender, race/ethnicity, etc.) and academic year. Demographic data were gathered from UO application records and baseline data collection records of the UO's [Student Wellbeing and Success Initiative (SWaSI) project](https://studentlife.uoregon.edu/research){target="_blank"}. All counts and percentages in this report are calculated based on available information (i.e., missing data were excluded). 
+
+#### Description of the Sample
+
+```{r unique-students, results = "hide"}
+
+# 2021-2022
+
+engage_2021_clean %>% 
+    distinct(id, .keep_all = TRUE) %>% # filter to one row per student
+    nrow()
+
+# 2022-2023
+
+engage_2022_clean %>% 
+    distinct(id, .keep_all = TRUE) %>% # filter to one row per student
+    nrow()
+
+# Max positions held by a student - 21
+
+num_positions_perstu21 <- engage_2021_clean %>% 
+  group_by(id) %>% # filter to one row per student
+  summarize(n = n()) %>% 
+  ungroup()
+
+max(num_positions_perstu21$n)
+mean(num_positions_perstu21$n)
+
+# Max positions held by a student - 22
+
+num_positions_perstu22 <- engage_2022_clean %>% 
+  group_by(id) %>% # filter to one row per student
+  summarize(n = n()) %>% 
+  ungroup()
+
+max(num_positions_perstu22$n)
+mean(num_positions_perstu22$n)
+
+```
+
+Students included in the sample were those who were members, officers, leaders, or other positions holders of active, valid student organizations in the Engage platform during 2021-2022 and 2022-2023 who were listed in UO enrollment records as being students in 2021-2022 and 2022-2023. There was no exclusion criteria for length of enrollment. Students who were enrolled at any point in Fall, Winter, or Spring term of 2021-2022 and Fall and Winter term of 2021-2022 were included. Organization positions were filtered by start date and end date to determine which academic year(s) students were active in.
+
+In all, this analysis identified `r format(engage_2021_clean %>% distinct(id) %>% nrow(), big.mark = ",")` unique students who held `r format(nrow(engage_2021_clean), big.mark = ",")` member, officer, or leadership positions with `r engage_2021_clean %>% distinct(organization_name) %>% nrow()` student organizations at UO during the 2021-2022 academic year. Students ended `r format(engage_2021_clean %>% filter(end_date < "2022-09-27") %>% nrow(), big.mark = ",")` of those positions between the first day of 2021-2022 and the first day of 2022-2023. The average number of memberships and other positions held by students during 2021-2022 was `r mean(num_positions_perstu21$n)`. The maximum number of memberships/positions held by an individual student was `rmax(num_positions_perstu21$n)`.
+
+There were `r format(engage_2022_clean %>% distinct(id) %>% nrow(), big.mark = ",")` unique students who held `r format(nrow(engage_2022_clean), big.mark = ",")` member or leadership positions for `r engage_2022_clean %>% distinct(organization_name) %>% nrow()` student organizations during Fall or Winter term of the 2022-2023 academic year (i.e., positions were active at some point between September 27, 2022 and March 5, 2023). Students ended `r format(engage_2022_clean %>% filter(end_date < "2023-03-06") %>% nrow(), big.mark = ",")` of those positions between September 27, 2022, and March 5, 2023. The average number of memberships and other positions held by students during 2022-2023 was `r mean(num_positions_perstu22$n)`. The maximum number of memberships/positions held by an individual student was `rmax(num_positions_perstu22$n)`.
+
+For descriptives of students by various academic and demographic characteristics, please see Tables 1-2 and Figures 1-17 below. 
+
+#### Overview of Student Characteristics and Demographics  
+
+Student involvement data were disaggregated by: 
+
+- Student level  
+  + Undergraduate, graduate, etc. 
+  + Undergraduate (Non-admit/Other) = Non-admit and American English Institute students.  
+  + Source: UO records
+- Student class  
+  + First-year, sophomore, etc. 
+  + Undergraduate (Non-admit/Other) = Non-admit and American English Institute students.  
+  + Source: UO records
+- Major (first listed) 
+  + First major listed for the specified year.
+  + Source: UO records
+- Multiple majors  
+  + Single major or multiple majors. 
+  + Source: UO records
+- College of major (first listed) 
+  + College (e.g., Education) of first major listed for the specified year.
+  + Source: UO records
+- College of major (first listed, "Unclassified" excluded)  
+  + College (e.g., Education) of first major listed for the specified year with "Unclassified" excluded (assigned to students without a declared major and non-admit students).  
+  + Source: UO records
+- Honors College enrollment  
+  + Enrolled or not for the specified year.  
+  + Source: UO records
+- Gender  
+    + Source: UO and SWaSI records
+- Sexuality  
+  + *LGBQ+* = students who reported their sexual orientation as any of the following: *Asexual, Bisexual, Gay, Lesbian, Pansexual, Queer, Questioning or Unsure, or Same-Gender Loving*. 
+  + *Straight or heterosexual* = students whose reported sexual orientation is *Straight or heterosexual*.  
+  + Source: SWaSI records
+- Gender & Sexuality  
+  + LGBTQIA+ = students whose reported gender identity is *Nonbinary* and/or sexual orientation is *LGBQ+*.  
+  + Not LGBTQIA+ = students whose reported gender identity is *Male* or *Female* and whose reported sexual orientation is *Straight or heterosexual*.
+  + Source: UO and SWaSI records
+- Race/ethnicity (categories expanded)  
+   + Based on federal reporting categories. 
+   + At the Office of Assessment and Research (OAR), we haved updated some terminology to be more contemporary and inclusive (e.g., Black = “Black or African American,” Latin* = “Hispanic or Latino,” Multiracial/ethnic = “Two or more races,” Native American or Alaska Native = “American Indian or Alaska Native"). 
+   + We have opted to use the term Latin* to "serve as a deliberate intervention—a pause for readers to consider the various ways in which people from Latin American origin and diaspora in the United States may identify" ([Salinas, 2020](https://uoregon.sharepoint.com/:b:/r/sites/SWaSI/Shared%20Documents/references/Salinas_JHHE_the_complexity_of_the_x_in_latinx_how_latinxao_students_relate_to_identify_with_and_understand_the_term_latinx.pdf?csf=1&web=1&e=cSCA8w){target="_blank"}; see also [Lozano et al., 2021](https://uoregon.sharepoint.com/:b:/r/sites/SWaSI/Shared%20Documents/references/Lozano_etal_2021_IJQSE_constructing_of_the_term_latinx_a_trioethnography_through_platicas.pdf?csf=1&web=1&e=d7seFS){target="_blank"}).  
+    + Source: UO records
+- Race/ethnicity (categories collapsed)  
+  + Expanded categories further combined for the purpose of granular reporting (cell sizes < 10 are not permitted in order to protect student privacy and confidentiality).  
+  + Traditionally Marginalized = students whose race/ethnicity in UO records is *Asian*, *Black*, *Latin*\*, *Native American or Alaska Native*, or *Native Hawaiian or Pacific Islander*.  
+  + Source: UO records
+- Age range binned (23 or under, 24+)  
+  + Source: UO records
+- Nontraditional status  
+  + Based on veteran status, age (24 or older), and transfer credits (> 30).
+  + Source: UO records
+- Oregon residency status
+  + Students eligbile for in-state tuition.
+  + Source: UO records
+- First-generation status  
+  + First-generation status was calculated based on students' parents' and/or guardians' highest level of education.  
+    + Students are considered first-generation if none of their parents/guardians obtained a four-year college degree or higher. If they report having at least one parent/guardian with this level of education or higher, they are considered continuing-generation.  
+    + Source: UO and SWaSI records
+- Global socioeconomic status  
+  + Lower, middle, upper.
+  + Source: SWaSI records
+- Family social class  
+  + Lower (Working Class and Lower-Middle Class), Middle (Middle Class), and Upper (Upper-Middle Class, and Upper Class).   
+  + Source: SWaSI records
+
+
+With the exception of gender, sexuality, first-generation status, and socioeconomic variables, this information was pulled from UO academic and application records. Gender and first-generation status were calculated based on a combination of UO application records and [SWaSI](https://studentlife.uoregon.edu/research){target="_blank"} baseline data. Gender identity from SWaSI records was prioritized over UO application records data because it is more inclusive. In the cases where gender was not available from SWaSI, it was back-filled with gender from application records. Similarly, first-generation status was calculated first based on UO records, back-filling with SWaSI records data as necessary. Sexual orientation and socioeconomic information (students' perceptions of their global socioeconomic status and their family's social class) were exclusively gathered from SWaSI records. A combined gender and sexuality variable was calculated based on gender and sexuality. 
+
+#### Limitations
+
+When reviewing the findings in this document, please be aware of the following limitations and keep them in mind.  
+
+- The degree to which members are or are not involved and engaged with the organization they are a member of is unknown. Members could be highly involved, merely interested in the organization, or anywhere in between.  
+- Although membership, roster, and event administration and management is strongly encouraged and in some instances, required by UO policy, it is possible that some members have not self-identified as such in the Engage platform.  
+
+#### Key Findings
+
+- The number of unique students involved with organizations during 2021-2022 was similar to the number involved during the 2022-2023 academic year. 
+- As of March of the 2022-2023 academic year, there were `r (engage_2022_clean %>% nrow()) - (engage_2021_clean %>% nrow())` more positions and `r (engage_2022_clean %>% distinct(organization_name) %>% nrow()) - (engage_2021_clean %>% distinct(organization_name) %>% nrow())` more student organizations than during the entire 2021-2022 academic year.  
+- Overall involvement for most student subgroups is comparable between 2021-2022 and 2022-2023.  
+- There are more students with multiple majors involved with student organizations so far in 2022-2023 compared to 2021-2022.  
+- The number of involved students identifying as LBGQ+ and/or LGBTQIA+ has increased from 2021-2022 to 2022-2023.  
+- 
+
+
+### Tables 1-2. Overall Student Descriptives by Year {.tabset .tabset-pills .tabset-fade}
+
+#### 2021-2022 
+
+```{r descriptives-overall-table-2021}
+# 21-22 overall descriptives: tables
+
+descrip_overall_21 <- engage_2021_clean %>% 
+  descrip_overall_prep(level_2021, 
+                       class_2021, 
+                       major_mult_21,
+                       major1_21_desc, 
+                       college1_21_desc, 
+                       age_binned_2021,
+                       nontrad_21, 
+                       honors_college_2021)
+
+descrip_overall_21 %>% 
+  descrip_reactable()
+
+```
+
+#### 2022-2023
+
+```{r descriptives-overall-table-2022}
+# 22-23 overall descriptives: tables
+
+descrip_overall_22 <- engage_2022_clean %>% 
+  descrip_overall_prep(level_2022, 
+                       class_2022, 
+                       major_mult_22,
+                       major1_22_desc,
+                       college1_22_desc, 
+                       age_binned_2022,
+                       nontrad_22, 
+                       honors_college_2022)
+
+descrip_overall_22 %>% 
+  descrip_reactable()
+```
+
+
+### Figures 1-6. Overall Student Descriptives by Year: Academic Characteristics {.tabset .tabset-pills .tabset-fade} 
+
+```{r descriptives-overall-plots-prep, results = "hide"}
+
+descrip_overall_all <- bind_rows(descrip_overall_21, 
+                                 descrip_overall_22, 
+                                 .id = "id") %>% 
+  mutate(id = recode(id,
+                     "1" = "2021-2022",
+                     "2" = "2022-2023"))
+```
+
+```{r descrip-all-nest-plot, results = "hide"}
+# ggplot(aes(x = id, y = Percentage, group = Subcategory, color = Subcategory)) +
+  # geom_point() +
+  # geom_line()
+
+descrip_overall_all_nested <- descrip_overall_all %>%
+  nest_by(Category) %>% 
+  mutate(plots = list(
+    ggplot(data, aes(x = id,
+                     y = Percentage,
+                     group = Subcategory,
+                     color = Subcategory,
+                     labels = Subcategory)) +
+      geom_point(size = 2) +
+      geom_line(linewidth = 1) +
+      coord_cartesian(ylim = c(0, 1.09)) +
+      scale_color_viridis(discrete = TRUE,
+                          labels = ~ stringr::str_wrap(.x, width = 15)) +
+      scale_y_continuous(expand = c(0, 0),
+                         breaks = c(0, .25, .5, .75, 1),
+                         labels = scales::percent) +
+      scale_x_discrete(expand = c(0, .6)) +
+      theme_minimal(14) +
+      theme(panel.grid.major.x = element_blank(),
+            panel.grid.minor.y = element_blank(),
+            panel.grid.minor.x = element_blank(),
+            axis.line = element_line(colour = "gray80")) +
+      labs(x = "Academic Year",
+           y = "% Unique Students",
+           color = "")))
+        
+# test
+# descrip_overall_all_nested$plots[[15]]
+
+```
+
+#### `r descrip_overall_all_nested$Category[[18]]`
+
+```{r}
+# Student Level
+p_all_level <- descrip_overall_all_nested$plots[[18]]
+
+descrip_ggplotly(p_all_level)
+
+```
+
+#### `r descrip_overall_all_nested$Category[[17]]`
+
+```{r}
+# Student Class
+p_all_class <- descrip_overall_all_nested$plots[[17]]
+
+descrip_ggplotly(p_all_class)
+
+```
+
+#### `r descrip_overall_all_nested$Category[[11]]`
+
+```{r}
+# Major (First Listed) - NOT INCLUDING - TOO MANY CATEGORIES
+# p_all_maj <- descrip_overall_all_nested$plots[[10]]
+
+# Multiple Majors
+p_all_majmult <- descrip_overall_all_nested$plots[[11]]
+
+descrip_ggplotly(p_all_majmult)
+
+```
+
+#### `r descrip_overall_all_nested$Category[[2]]`
+
+```{r}
+# College of Major (First Listed)
+p_all_coll_all <- descrip_overall_all_nested$plots[[2]]
+
+descrip_ggplotly(p_all_coll_all)
+
+```
+
+#### `r descrip_overall_all_nested$Category[[3]]`
+
+```{r}
+# College of Major (First Listed, Unclassifed Excluded)
+p_all_coll_excl <- descrip_overall_all_nested$plots[[3]]
+
+descrip_ggplotly(p_all_coll_excl)
+
+```
+
+#### `r descrip_overall_all_nested$Category[[9]]`
+
+```{r}
+# Honors College
+p_all_hc <- descrip_overall_all_nested$plots[[9]]
+
+descrip_ggplotly(p_all_hc)
+
+```
+
+### Figures 7-9. Overall Student Descriptives by Year: Gender and Sexuality {.tabset .tabset-pills .tabset-fade} 
+
+#### `r descrip_overall_all_nested$Category[[6]]`
+
+```{r}
+# Gender
+p_all_go <- descrip_overall_all_nested$plots[[6]]
+
+descrip_ggplotly(p_all_go)
+
+```
+
+#### `r descrip_overall_all_nested$Category[[16]]`
+
+```{r}
+# Sexuality
+p_all_so <- descrip_overall_all_nested$plots[[16]]
+
+descrip_ggplotly(p_all_so)
+
+```
+
+#### `r descrip_overall_all_nested$Category[[7]]`
+
+```{r}
+# Gender & Sexuality
+p_all_giso <- descrip_overall_all_nested$plots[[7]]
+
+descrip_ggplotly(p_all_giso)
+
+```
+
+
+### Figures 10-11. Overall Student Descriptives by Year: Race/Ethnicity and Oregon Residency Status {.tabset .tabset-pills .tabset-fade} 
+
+#### `r descrip_overall_all_nested$Category[[15]]`
+
+```{r}
+# Race/Ethnicity Expanded
+p_all_re <- descrip_overall_all_nested$plots[[15]]
+
+descrip_ggplotly(p_all_re)
+
+```
+
+#### `r descrip_overall_all_nested$Category[[14]]`
+
+```{r}
+# Race/Ethnicity Collapsed
+p_all_recoll <- descrip_overall_all_nested$plots[[14]]
+
+descrip_ggplotly(p_all_recoll)
+
+```
+
+### Figures 12-13. Overall Student Descriptives by Year: Age and Non-traditional Status {.tabset .tabset-pills .tabset-fade} 
+
+#### `r descrip_overall_all_nested$Category[[1]]`
+
+```{r}
+# Age Range
+p_all_age_bin <- descrip_overall_all_nested$plots[[1]]
+
+descrip_ggplotly(p_all_age_bin)
+```
+
+#### `r descrip_overall_all_nested$Category[[12]]`
+
+```{r}
+# Nontraditional Status
+p_all_nontrad <- descrip_overall_all_nested$plots[[12]]
+
+descrip_ggplotly(p_all_nontrad)
+
+```
+
+### Figures 14-17. Overall Student Descriptives by Year: Residency Status and Socioeconomic Status {.tabset .tabset-pills .tabset-fade} 
+
+#### `r descrip_overall_all_nested$Category[[13]]`
+
+```{r}
+# Oregon Residency Status
+p_all_res <- descrip_overall_all_nested$plots[[13]]
+
+descrip_ggplotly(p_all_res)
+```
+
+
+#### `r descrip_overall_all_nested$Category[[5]]`
+
+```{r}
+# First-Generation Status
+p_all_fg <- descrip_overall_all_nested$plots[[5]]
+
+descrip_ggplotly(p_all_fg)
+
+```
+
+#### `r descrip_overall_all_nested$Category[[4]]`
+
+```{r}
+# Family Social Class
+p_all_fsc <- descrip_overall_all_nested$plots[[4]]
+
+descrip_ggplotly(p_all_fsc)
+
+```
+
+#### `r descrip_overall_all_nested$Category[[8]]`
+
+```{r}
+# Global Socioeconomic Status
+p_all_sss <- descrip_overall_all_nested$plots[[8]]
+
+descrip_ggplotly(p_all_sss)
+
+```
+
+
+
+
+
+```{r exploring-reactablefmtr}
+# d <- descrip_overall_all %>% 
+#   pivot_wider(names_from = id,
+#               values_from = 4:5) %>% 
+#   select(-n_1, 
+#          -n_2) 
+# 
+# d %>% 
+#   reactable(defaultColDef = colDef(
+#     cell = reactablefmtr::data_bars(d, text_position = "outside-base")
+#   )
+#   )
+# 
+# descrip_overall_all %>% 
+#   filter(Category == "Gender" |
+#          Category == "Sexuality" |
+#          Category == "Gender & Sexuality") %>% 
+#   ggplot(aes(x = id, y = Percentage, group = Subcategory, color = Subcategory)) +
+#   geom_point() +
+#   geom_line()
+# 
+# descrip_overall_all %>% 
+#   filter(Category == "Race/Ethnicity Expanded") %>% 
+#   ggplot(aes(x = id, y = Percentage, group = Subcategory, color = Subcategory)) +
+#   geom_point() +
+#   geom_line()
+# 
+# descrip_overall_all %>% 
+#   filter(Category == "Race/Ethnicity Expanded") %>% 
+#   ggplot(aes(x = id, 
+#              y = Percentage, 
+#              fill = Subcategory)) +
+#   geom_col(position = "dodge")
+
+```
+
+```{r descriptives-overall-unused-code}
+# engage_2021_clean %>%
+#   distinct(id, .keep_all = TRUE) %>%
+#   tabyl(gi_so, show_na = TRUE)%>%
+#   adorn_pct_formatting(digits = 2) %>%
+#   mutate(Category = "Student Level") %>%
+#   rename("Subcategory" = gi_so,
+#          "Percentage" = "percent") %>%
+#     select(Category,
+#            Subcategory,
+#            n,
+#            Percentage) 
+
+
+
+# 
+# engage_2021_clean %>% 
+#   group_by(level_2022, class_2022) %>% 
+#   summarize(n = n())
+
+
+# test <- engage_2021_clean %>% 
+#   distinct(id, .keep_all = TRUE) %>% 
+#   group_by(gi) %>% 
+#   summarize(n = n()) %>% 
+#   drop_na(gi) %>% 
+#   #adorn_totals("row") %>% 
+#   pivot_wider(names_from = gi,
+#               values_from = n) %>% 
+#   prop.table()*100
+# 
+# prop.table(test) * 100
+
+
+# %>% 
+#   mutate(pct = (.[[1]] / Total)*100)
+
+# didn't work
+# install.packages("SciencesPro")
+# library(SciencesPro)
+# 
+# perc.table(test)
+```
+
+### Figures 18-19. Organization Size by Parent Organization and Academic Year {.tabset .tabset-pills .tabset-fade} 
+
+```{r treemap-prep}
+org_counts_21 <- engage_2021_clean %>%
+  group_by(organization_name,
+           short_name,
+           organization_id,
+           organization_type,
+           parent_organization) %>%
+  summarize(org_n = n()) %>% 
+  ungroup() %>% 
+  group_by(parent_organization) %>% 
+  mutate(par_n = sum(org_n)) %>% 
+  ungroup() 
+
+org_counts_22 <- engage_2022_clean %>%
+  group_by(organization_name,
+           short_name,
+           organization_id,
+           organization_type,
+           parent_organization) %>%
+  summarize(org_n = n()) %>% 
+  ungroup() %>% 
+  group_by(parent_organization) %>% 
+  mutate(par_n = sum(org_n)) %>% 
+  ungroup()
+
+```
+
+#### 2021-2022
+```{r treemaps-plotly-2021}
+
+# Landing on this solution took a full day to figure out. Still need ot figure out how to customize tooltip/hover to include full org name. Extremely grateful for: https://stackoverflow.com/questions/74173853/treemaps-with-plotly-blank-screen
+
+org_counts_21b_2 <- org_counts_21 %>% # create id labels for each row
+  select(-organization_id,
+         #-short_name,
+         -par_n,
+         -organization_type) %>%
+    mutate(
+      ids = ifelse(parent_organization == "", short_name, 
+                        paste0(short_name, "-", parent_organization))) %>% 
+    select(ids, everything())
+
+par_info21_2 <- org_counts_21b_2 %>% 
+    group_by(parent_organization) %>%  # group by parent
+    summarise(org_n = sum(org_n)) %>%  # parent total
+    rename(short_name = parent_organization) %>%            # parent labels for the item field
+    mutate(parent_organization = "", 
+           organization_name = "",
+           ids = short_name) %>%  # add missing fields for org_counts_21b_2
+    select(names(org_counts_21b_2))            # put cols in same order as org_counts_21b_2
+
+  
+org_counts_21c_2 <- rbind(org_counts_21b_2, par_info21_2)
+
+
+plot_ly(
+  data = org_counts_21c_2, 
+  branchvalues = "total",
+  type = "treemap", 
+  labels = ~short_name,
+  parents = ~parent_organization, 
+  values = ~org_n, 
+  ids = ~ids,
+  height = 700,
+  width = 1000,
+  hoverinfo = "text",
+  hovertext = paste("Org: ", org_counts_21c_2$organization_name,
+                    "<br> N: ", org_counts_21c_2$org_n)) %>% 
+  layout(treemapcolorway = # used this per documentation on plotly website. Works even though it throws a warning. 
+           c("#440154", "#33638d", "#1f968b", "#56c667", "#bade28"))
+  
+
+```
+
+#### 2022-2023
+```{r treemaps-plotly-2022}
+
+org_counts_22b_2 <- org_counts_22 %>% # create id labels for each row
+  select(-organization_id,
+         #-short_name,
+         -par_n,
+         -organization_type) %>%
+    mutate(
+      ids = ifelse(parent_organization == "", short_name, 
+                        paste0(short_name, "-", parent_organization))) %>% 
+    select(ids, everything())
+
+par_info22_2 <- org_counts_22b_2 %>% 
+    group_by(parent_organization) %>%  # group by parent
+    summarise(org_n = sum(org_n)) %>%  # parent total
+    rename(short_name = parent_organization) %>%            # parent labels for the item field
+    mutate(parent_organization = "", 
+           organization_name = "",
+           ids = short_name) %>%  # add missing fields for org_counts_22b_2
+    select(names(org_counts_22b_2))            # put cols in same order as org_counts_22b_2
+
+  
+org_counts_22c_2 <- rbind(org_counts_22b_2, par_info22_2)
+
+
+plot_ly(
+  data = org_counts_22c_2, 
+  branchvalues = "total",
+  type = "treemap", 
+  labels = ~short_name,
+  parents = ~parent_organization, 
+  values = ~org_n, 
+  ids = ~ids,
+  height = 700,
+  width = 1000,
+  hoverinfo = "text",
+  hovertext = paste("Org: ", org_counts_22c_2$organization_name,
+                    "<br> N: ", org_counts_22c_2$org_n)) %>% 
+  layout(treemapcolorway = 
+           c("#440154", "#33638d", "#1f968b", "#56c667", "#bade28"))
+  
+
+```
+
+### Table 3. Student Organization Directory
+
+```{r org-directory-table}
+
+# TO DO: 
+# Strip all html formatting tags from the description and summary columns. I did not get to this. 
+# Change "Url" to "URL" in the table and polish it more (nest by parent and type)
+# Filter to orgs that are in treemaps and add counts by year
+# Figure out how to widen the 'Summary' column
+
+# library(rvest)
+# 
+# strip_html(org_details$organization_description)
+# 
+# org_details$organization_description <- gsub(pattern = "<.*>", 
+#                                              replacement = "", 
+#                                              x = org_details$organization_description)
+
+org_details %>% 
+  filter(status == "Active") %>% 
+  select(organization_name,
+         short_name, 
+         organization_summary,
+         organization_type,
+         parent_organization_name,
+         contains("url")) %>% 
+  rename(organization_short_name = short_name) %>% 
+  clean_names(case = "title") %>% 
+  reactable(filterable = TRUE,
+            searchable = TRUE,
+            striped = TRUE,
+            highlight = TRUE,
+            bordered = TRUE,
+            resizable = TRUE,
+            compact = TRUE,
+            #wrap = FALSE,
+            defaultPageSize = 100,
+
+            height = 1000,
+            width = 900,
+            defaultColDef = colDef(
+              footer = function(values, name) {
+                htmltools::div(name, style = list(fontWeight = 600))
+              }))
+
+
+            # columns = list(
+            #   `Organization Description`  =
+            #     colDef(width = 400)))
+
+
+
+```
+
+
+```{r treemaps-plotly-2022-VERSION1-back-up, eval = FALSE}
+# 
+# org_counts_22b <- org_counts_22 %>% # create id labels for each row
+#   select(-organization_id,
+#          -short_name,
+#          -par_n,
+#          -organization_type) %>%
+#     mutate(
+#       ids = ifelse(parent_organization == "", organization_name, 
+#                         paste0(organization_name, "-", parent_organization))) %>% 
+#     select(ids, everything())
+# 
+# par_info22 <- org_counts_22b %>% 
+#     group_by(parent_organization) %>%  # group by parent
+#     summarise(org_n = sum(org_n)) %>%  # parent total
+#     rename(organization_name = parent_organization) %>%            # parent labels for the item field
+#     mutate(parent_organization = "", 
+#            ids = organization_name) %>%  # add missing fields for org_counts_22b
+#     select(names(org_counts_22b))            # put cols in same order as org_counts_22b
+# 
+#   
+# org_counts_22c <- rbind(org_counts_22b, par_info22)
+# 
+# 
+# plot_ly(
+#   data = org_counts_22c, 
+#   branchvalues = "total",
+#   type = "treemap", 
+#   labels = ~organization_name,
+#   parents = ~parent_organization, 
+#   values = ~org_n, 
+#   ids = ~ids,
+#   height = 700,
+#   width = 1000) %>% 
+#   layout(treemapcolorway = 
+#            c("#440154", "#33638d", "#1f968b", "#56c667", "#bade28"))
+
+# trial and error color adjustment
+  
+  # ,
+  #   marker = list(colorscale = "Viridis"))
+  # 
+  # marker=list(colors=c("#bade28", "#bade28", 
+  #                            "#56c667", "#56c667", 
+  #                            "#1f968b", "#1f968b", 
+  #                            "#33638d", "#33638d",
+  #                            "#440154", "#440154")))
+  
+
+
+#   
+
+```
+
+```{r treemaps-unused-code, eval = FALSE}
+
+# plot_ly(
+#   data = org_counts_21,
+#   type = 'treemap',
+#   labels = ~short_name,
+#   parents = ~parent_organization,
+#   ids= ~parent_organization,
+#   values= ~org_n
+# )
+# 
+# 
+# tm1 <- org_counts_21  %>%  
+#   treemap(index = c("parent_organization", "short_name"),
+#           vSize = "org_n",
+#           type = "index")
+
+          # 
+          # # vColor = "par_n",
+          # # type = "comp",
+          # palette = viridis(5,
+          #                   direction = -1))
+# 
+# tm <- org_counts_21  %>%  
+#   treemap(index = c("parent_organization", "short_name"),
+#           vSize = "org_n",
+#           # vColor = "par_n",
+#           # type = "comp",
+#           palette = viridis(5),
+#           border.col = c("white","white"),
+#           border.lwds = c(2, .35),  
+#           fontcolor.labels=c("white","white"), 
+#           fontsize.labels = c(12, 8), 
+#           inflate.labels = FALSE,
+#           title = "")
+# 
+# hctreemap(tm, allowDrillToNode = TRUE, layoutAlgorithm = "squarified") 
+# 
+# hctreemap2(org_counts_21,
+#            group_vars = c("parent_organization", "short_name"),
+#           size_var = "org_n")
+#   
+
+#ggplotly(p) # ggplotly doesn't work with treemap()
+
+# played around with alternative treemap options. Sticking with treemap() for now.
+
+# org_tree_prep <- org_counts_21  %>%
+#   data_to_hierarchical(group_vars = c("parent_organization", "short_name"),
+#              size_var = "org_n")
+#              #palette = inferno(4))
+# 
+# hchart(org_tree_prep, 
+#        type = "treemap") 
+# 
+# org_counts_21 %>% 
+#   hchart("treemap", 
+#          hcaes(name = short_name, 
+#                node = parent_organization,
+#                value = org_n,
+#                color = parent_organization)) 
+# 
+# 
+# 
+
+# 
+# p <- org_counts_21 %>% 
+#   ggplot(aes(area = n,
+#              fill = parent_organization,
+#              label = short_name,
+#              subgroup = parent_organization)) +
+#   treemapify::geom_treemap(layout = "squarified") +
+#   geom_treemap_text(place = "centre", size = 12)
+# 
+# ggplotly(p) # ggplotly doesn't support geom_treemap_text
+
+# +
+#   labs(title="Sub Grouped Tree Plot using ggplot and treemapify in R")
+
+
+# engage_2022_clean %>%
+# tabyl(position_binned2, gi_so) %>%
+#   adorn_percentages("row") %>%
+#   adorn_pct_formatting(digits = 2) %>%
+#   adorn_ns()
+
+
+
+```

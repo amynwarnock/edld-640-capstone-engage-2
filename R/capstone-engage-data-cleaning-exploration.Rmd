@@ -1,0 +1,1766 @@
+---
+title: "Campus Labs Engage Data Exploration"
+author: "Amy N. Warnock"
+date: "2023-01-25"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+#install.packages("treemap")
+#install.packages("ggtext")
+#install.packages("plotly")
+# install.packages("Rtools")
+# install.packages("htmltools")
+
+library(tidyverse)
+library(rio)
+library(here)
+library(janitor)
+library(psych)
+library(finalfit)
+library(stringr)
+library(lubridate)
+library(scales)
+library(treemap)
+library(ggtext)
+library(plotly)
+
+```
+
+```{r load-data}
+
+# import profile/member data from Engage
+
+users_involved_all <- read.csv(here("data", "InvolvedUsers_All_20110101-20220305_FAKE.csv"), 
+                         na.strings = c("", "NA")) %>% 
+  clean_names()
+
+# import demographics from IDR/Cognos UO reports
+
+idr_202101 <- read.csv(here("data", "StuDemos_ALLbyAcaTerm_uoemail_packedcolleges_202101_FAKE.csv"), 
+                         na.strings = c("", "NA")) %>% 
+  clean_names()
+
+idr_202102 <- read.csv(here("data", "StuDemos_ALLbyAcaTerm_uoemail_packedcolleges_202102_FAKE.csv"), 
+                         na.strings = c("", "NA")) %>% 
+  clean_names()
+
+idr_202103 <- read.csv(here("data", "StuDemos_ALLbyAcaTerm_uoemail_packedcolleges_202103_FAKE.csv"), 
+                         na.strings = c("", "NA")) %>% 
+  clean_names()
+
+idr_202201 <- read.csv(here("data", "StuDemos_ALLbyAcaTerm_uoemail_packedcolleges_202201_FAKE.csv"), 
+                         na.strings = c("", "NA")) %>% 
+  clean_names()
+
+idr_202202 <- read.csv(here("data", "StuDemos_ALLbyAcaTerm_uoemail_packedcolleges_202202_FAKE.csv"), 
+                         na.strings = c("", "NA")) %>% 
+  clean_names()
+
+# import swasi demos and id crosswalk
+
+swasi_demos <- read.csv(here("data", "swasi_demos_for_engage_FAKE.csv"), 
+                         na.strings = c("", "NA")) %>% 
+  clean_names()
+
+idr_swasi_arbids <- read.csv(here("data", "engage_llave_FAKE.csv"), 
+                         na.strings = c("", "NA")) %>% 
+  clean_names()
+
+# import org details (contains org description, summary, URL, social media links, etc.)
+
+# orgs_asuo <- read.csv(here("data", "OrganizationDetails_ASUO.csv"),
+#                     na.strings = c("")) %>% 
+#   clean_names()
+
+# import major and college crosswalk keys
+
+major_xwalk <- import(here("data", "majors.xlsx")) %>% 
+  clean_names()
+
+college_xwalk <- import(here("data", "colleges.xlsx")) %>% 
+  clean_names()
+
+# import org directory
+
+org_directory <- read.csv(here("data", "OrganizationDirectoryAll_2023-03-01_deided.csv"), 
+                         na.strings = c("", "NA")) %>% 
+  clean_names()
+
+# import events
+
+
+
+```
+
+```{r unused-data}
+
+# files I didn't end up using
+
+# users_all <- import(here("data", "AllUsers1.24.23.csv")) %>% 
+#   clean_names()
+                
+# users_involved_20230124 <- import(here("data", "InvolvedUsers1.24.23.csv"), 
+#                          na.strings = c("")) %>% 
+#   clean_names()
+
+
+# users_involved_all_202107_202203 <- import(here("data", "InvolvedUsers_All_20210701-20220305.csv"), 
+#                          na.strings = c("")) %>% 
+#   clean_names()
+
+```
+
+```{r idr-check-mult-rows}
+
+idr_202201 %>% 
+  group_by(id) %>% 
+  summarize(n = n()) %>% 
+  filter(n > 1)
+
+idr_202202 %>% 
+  group_by(id) %>% 
+  summarize(n = n()) %>% 
+  filter(n > 1)
+
+```
+
+```{r idr-stack-term-reports}
+
+# stack IDR/Cognos demographics reports from fall, winter, spring of 21-22
+
+idr_202101_03 <- bind_rows(idr_202101, # fall term report
+                           idr_202102, # winter term
+                           idr_202103) # spring
+
+
+
+# stack fall, winter 22-23
+
+idr_202201_02 <- bind_rows(idr_202201, 
+                           idr_202202)
+
+```
+
+```{r idr-engage-identify-active-students}
+
+# code below was used for (a) summarizing IDs of 21-22 and 22-23 students and (b) matching to Engage user records to determine users during those 2 school years in order to link to demographics gathered by the UO Student Wellbeing and Success Initiative (SWaSI) project (all new incoming students complete the survey)
+
+# stus_21 <- idr_202101_03 %>% # tabulate student IDs from the 21-22 school year
+#   group_by(id, uo_email_address) %>% 
+#   summarize(stu_21_22 = "yes") %>% 
+#   ungroup()
+#   
+# 
+# stus_22 <- idr_202201_02 %>% # tabulate student IDs from the 22-23 school year
+#   group_by(id, uo_email_address) %>% 
+#   summarize(stu_22_23 = "yes") %>% 
+#   ungroup()
+# 
+# stus_21and22 <- full_join(stus_21, # full join
+#                           stus_22, 
+#                           by = "id",
+#                           na_matches = "never") %>%  # be careful not to match on NA
+#   #  mutate(nomatch = ifelse(uo_email_address.x != uo_email_address.y, 1, 0)) # checked to see if there were any diffs in uo emails
+#   mutate(uo_email_address = coalesce(uo_email_address.x, uo_email_address.y)) %>% 
+#   select(-uo_email_address.x,
+#          uo_email_address.y)
+# 
+# 
+# users_inv_all_updated <- users_involved_all %>%
+#   left_join(stus_21and22,
+#             by = c("campus_email" = "uo_email_address"),
+#             na_matches = "never")
+# 
+# # this was to compare counts between two different reports exported from Engage. The "all" report had more records, so I went with that knowing I can filter by "end date"
+# 
+# # users_inv_recent_updated <- users_involved_all_202107_202203 %>% 
+# #   left_join(stus_21and22,
+# #             by = c("campus_email" = "uo_email_address"),
+# #             na_matches = "never")
+# 
+# # table(users_inv_all_updated$stu_21_22)
+# # table(users_inv_recent_updated$stu_21_22)
+# # table(users_inv_all_updated$stu_22_23)
+# # table(users_inv_recent_updated$stu_22_23)
+# 
+# users_inv_all_updated %>% 
+#   filter(!is.na(id),
+#          stu_21_22 == "yes" | stu_22_23 == "yes") %>% 
+#   group_by(id) %>% 
+#   summarize(n = n())
+# 
+# # users_inv_recent_updated %>% 
+# #   filter(!is.na(id),
+# #          stu_21_22 == "yes" | stu_22_23 == "yes") %>% 
+# #   group_by(id) %>% 
+# #   summarize(n = n())
+# 
+# users_21_22_matched_idr_stuIDs <- users_inv_all_updated %>% 
+#   filter(!is.na(id),
+#          stu_21_22 == "yes" | stu_22_23 == "yes") %>% 
+#   group_by(id) %>% 
+#   summarize(n = n())
+# 
+# # file exported for Brian to match to SWaSI records
+# 
+# # write_csv(users_21_22_matched_idr_stuIDs, "students_21-22_22-23.csv")
+# 
+# # explore cases of 21-22 and 22-23 Engage users who were not matched to IDR records from 21-22 and 22-23. Spot-checked using the "Find People" UO tool. Many resulted in no match found, and those I could find were all staff and faculty.
+# 
+# users_21_22_nomatch <- users_inv_all_updated %>% 
+#   mutate(position_start_date = mdy(position_start_date),
+#          year_start = year(position_start_date)) %>% 
+#   filter(year_start == "2021" | 
+#            year_start == "2022" | 
+#            year_start == "2023", 
+#          is.na(stu_21_22) & 
+#            is.na(stu_22_23)) %>% 
+#   select(organization_name, 
+#          position_template, 
+#          position_start_date, 
+#          year_start,
+#          position_end_date,
+#          campus_email, 
+#          id, 
+#          stu_21_22, 
+#          stu_22_23) 
+
+```
+
+```{r idr-wrangling}
+
+# wrangle 21-22
+
+idr_202101_3b <- idr_202101_03 %>%
+  select(-international_student_flag, # remove variables that won't be used
+         -all_packed_dg_minors,
+         -all_packed_dg_minor_colls,
+         -student_concentrations) %>% 
+         #-uo_gpa_hours, # I took these out when creating falsified datasets
+         #-uo_earned_hours,
+         #-overall_earned_hours) %>% 
+  pivot_wider(names_from = academic_period, # pivot wider by term so we get one row per student
+              values_from = 2:17) %>% 
+  mutate(gender_2021 = coalesce(gender_202103, # coalesce across terms 
+                                gender_202102, # so that I have one value from 21-22 that represents the last value on record
+                                gender_202101), # this is necessary b/c some students were not enrolled for all 3 terms
+         race_eth_2021 = coalesce(federal_ethnic_desc_202103, # race/eth from application records
+                                  federal_ethnic_desc_202102,
+                                  federal_ethnic_desc_202101),
+         res_2021 = coalesce(residency_desc_202103, # OR residency status from application records
+                             residency_desc_202102,
+                             residency_desc_202101),
+         parent_ed_2021 = coalesce(education_level_desc_202103, # par/guar highest ed lvl from application records (used for first-gen status)
+                                   education_level_desc_202102,
+                                   education_level_desc_202101),
+         age_today = coalesce(current_age_202103, # NOT term specific. From application records. Used to calc non-trad status (< 18 or >= 24)
+                             current_age_202102,
+                             current_age_202101),
+         # dob_2021 = coalesce(birth_date_202103, # NOT term specific. From application records. Used to calc non-trad status (< 18 or >= 24)
+         #                     birth_date_202102,
+         #                     birth_date_202101), 
+         vet_type_2021 = coalesce(veteran_type_desc_202103, # application records - used to calc non-trad status
+                                  veteran_type_desc_202102,
+                                  veteran_type_desc_202101),
+         level_2021 = coalesce(student_level_desc_202103, # term specific
+                               student_level_desc_202102, 
+                               student_level_desc_202101),
+         class_2021 = coalesce(student_class_boap_desc_202103, # term specific
+                               student_class_boap_desc_202102, 
+                               student_class_boap_desc_202101),
+         maj_2021 = coalesce(all_packed_dg_majors_202103, # NOT term specific. what is currently on record
+                             all_packed_dg_majors_202102,
+                             all_packed_dg_majors_202101),
+         coll_2021 = coalesce(all_packed_dg_major_colls_202103, # NOT term specific. what is currently on record
+                                 all_packed_dg_major_colls_202102,
+                                 all_packed_dg_major_colls_202101),
+         honors_college_2021 = coalesce(honors_college_flag_202103, # term specific
+                                        honors_college_flag_202102,
+                                        honors_college_flag_202101,
+                                        "Not Enrolled"), 
+         honors_college_2021 = recode(honors_college_2021, Y = "Enrolled"),
+         gpa_2021 = coalesce(cum_gpa_as_of_today_202103, # NOT term specific. Cumulative GPA as of date of latest report export.
+                             cum_gpa_as_of_today_202102,
+                             cum_gpa_as_of_today_202101),
+         transfer_hours_2021 = coalesce(total_transfer_hours_202103, # NOT term specific. Used to calc non-trad status
+                                         total_transfer_hours_202102, 
+                                         total_transfer_hours_202101),
+         conf_ind_2021 = coalesce(confidentiality_ind_202103, # variable indicating students have opted out of sharing their information
+                                  confidentiality_ind_202102,
+                                  confidentiality_ind_202101),
+         age_2021 = (age_today - 1), # age variable is age as of day reports were last exported. Subtract 1 for approx age in 21-22.
+         stu_2021 = "yes") %>% 
+  select(stu_2021, # select cleaned up vars and vars of interest
+         id, 
+         arb_id,
+         uo_email_address, # will be used to link to Engage data (some 95#s are missing there)
+         gender_2021, # some "_2021" vars will be specific to 21-22. Others are just gathered from 21-22 (e.g., DOB won't change from 21-22 to 22-23)
+         age_2021, 
+         age_today,
+         #dob_2021,
+         race_eth_2021,
+         res_2021, 
+         parent_ed_2021,
+         vet_type_2021,
+         level_2021,
+         class_2021,
+         maj_2021,
+         coll_2021,
+         honors_college_2021,
+         gpa_2021,
+         transfer_hours_2021,
+         conf_ind_2021) 
+
+# wrangle 22-23
+
+idr_202201_2b <- idr_202201_02 %>%
+  select(-international_student_flag, # remove variables that won't be used
+         -all_packed_dg_minors,
+         -all_packed_dg_minor_colls,
+         -student_concentrations) %>% 
+         # -uo_gpa_hours,
+         # -uo_earned_hours,
+         # -overall_earned_hours) %>% 
+  pivot_wider(names_from = academic_period, # pivot wider by term so we get one row per student
+              values_from = 2:17) %>% 
+  mutate(gender_2022 = coalesce(#gender_202203, # coalesce across terms. NOTE: Leaving 202203 code b/c this report will be updated after 202203.
+                                gender_202202, # so that I have one value from 21-22 that represents the last value on record
+                                gender_202201), # this is necessary b/c some students were not enrolled for all terms
+         race_eth_2022 = coalesce(#federal_ethnic_desc_202203, # race/eth from application records
+                                  federal_ethnic_desc_202202,
+                                  federal_ethnic_desc_202201),
+         res_2022 = coalesce(#residency_desc_202203, # OR residency status from application records
+                             residency_desc_202202,
+                             residency_desc_202201),
+         parent_ed_2022 = coalesce(#education_level_desc_202203, # par/guar highest ed lvl from application records (used for first-gen status)
+                                   education_level_desc_202202,
+                                   education_level_desc_202201),
+         age_today = coalesce(#current_age_202203, # NOT term specific. From application records. Used to calc non-trad status (< 18 or >= 24)
+                             current_age_202202,
+                             current_age_202201),
+         # dob_2022 = coalesce(#birth_date_202203, # NOT term specific. From application records. Used to calc non-trad status (< 18 or >= 24)
+         #                     birth_date_202202,
+         #                     birth_date_202201), 
+         vet_type_2022 = coalesce(#veteran_type_desc_202203, # application records - used to calc non-trad status
+                                  veteran_type_desc_202202,
+                                  veteran_type_desc_202201),
+         level_2022 = coalesce(#student_level_desc_202203, # term specific
+                               student_level_desc_202202, 
+                               student_level_desc_202201),
+         class_2022 = coalesce(#student_class_boap_desc_202203, # term specific
+                               student_class_boap_desc_202202, 
+                               student_class_boap_desc_202201),
+         maj_2022 = coalesce(#all_packed_dg_majors_202203, # NOT term specific. what is currently on record
+                             all_packed_dg_majors_202201,
+                             all_packed_dg_majors_202202),
+         coll_2022 = coalesce(#all_packed_dg_major_colls_202203, # NOT term specific. what is currently on record
+                                 all_packed_dg_major_colls_202201,
+                                 all_packed_dg_major_colls_202202), # discovered when merging with colleg names that 202202 file had some missing that shouldn't be. Therefore using colleges from 202201 file
+         honors_college_2022 = coalesce(#honors_college_flag_202203, # term specific
+                                        honors_college_flag_202202,
+                                        honors_college_flag_202201,
+                                        "Not Enrolled"), 
+          honors_college_2022 = recode(honors_college_2022, Y = "Enrolled"),
+         gpa_2022 = coalesce(#cum_gpa_as_of_today_202203, # NOT term specific. Cumulative GPA as of date of latest report export.
+                             cum_gpa_as_of_today_202202,
+                             cum_gpa_as_of_today_202201),
+         transfer_hours_2022 = coalesce(#total_transfer_hours_202203, # NOT term specific. Used to calc non-trad status
+                                         total_transfer_hours_202202, 
+                                         total_transfer_hours_202201),
+         conf_ind_2022 = coalesce(#confidentiality_ind_202203, # variable indicating students have opted out of sharing their information
+                                  confidentiality_ind_202202,
+                                  confidentiality_ind_202201),
+         age_2022 = age_today,
+         stu_2022 = "yes") %>% 
+  select(stu_2022, # select cleaned up vars and vars of interest
+         id, 
+         arb_id,
+         uo_email_address, # will be used to link to Engage data (some 95#s are missing there)
+         gender_2022, # some "_2022" vars will be specific to 21-22. Others are just gathered from 21-22 (e.g., DOB won't change from 21-22 to 22-23)
+         age_2022, 
+         age_today,
+         #dob_2022,
+         race_eth_2022,
+         res_2022, 
+         parent_ed_2022,
+         vet_type_2022,
+         level_2022,
+         class_2022,
+         maj_2022,
+         coll_2022,
+         honors_college_2022,
+         gpa_2022,
+         transfer_hours_2022,
+         conf_ind_2022) 
+
+# join 21-22 and 22-23 files
+
+idr_21_22_full <- full_join(idr_202101_3b, 
+                            idr_202201_2b,
+                            #by = "id",
+                            na_matches = "never") %>% 
+  mutate(
+    # uo_email_address = coalesce(uo_email_address.x, uo_email_address.y), # coalesce vars that likely aren't diff across years or pull the most recent/non-missing
+         gender = coalesce(gender_2022, 
+                           gender_2021), 
+         # dob = coalesce(dob_2022, 
+         #                dob_2021),
+         race_eth = coalesce(race_eth_2022, 
+                             race_eth_2021),
+         res = coalesce(res_2022, 
+                        res_2021), 
+         parent_ed = coalesce(parent_ed_2022, 
+                              parent_ed_2021),
+         vet_type = coalesce(vet_type_2022, 
+                             vet_type_2021),
+         major = coalesce(maj_2022, 
+                          maj_2021), # current as of report generation so will not be diff
+         college = coalesce(coll_2022, 
+                            coll_2021), # current as of report generation so will not be diff
+         gpa = coalesce(gpa_2022, 
+                        gpa_2021), # current as of report generation so will not be diff
+         transfer_hours = coalesce(transfer_hours_2022, 
+                                   transfer_hours_2021), # current as of report generation so are not diff
+         conf_ind = coalesce(conf_ind_2022, # use the latest on file in case of changes
+                             conf_ind_2021),
+         # honors_college_any = coalesce(honors_college_2022, # decided not to use
+         #                               honors_college_2021),
+         # age_today = coalesce(age_today.x,
+         #                      age_today.y),
+         level_2021 = case_when(
+           level_2021 == "American English Institute" |
+             level_2021 == "Non-admit Undergraduate" ~
+             "Undergraduate (Non-Admit/Other)",
+           level_2021 == "Graduate" |
+             level_2021 == "Law" ~
+             "Graduate or Law",
+           level_2021 == "Non-admit Graduate" ~
+             "Graduate (Non-Admit)",
+           level_2021 == "Undergraduate" ~
+             "Undergraduate"),
+         level_2022 = case_when(
+           level_2022 == "American English Institute" |
+             level_2022 == "Non-admit Undergraduate" ~
+             "Undergraduate (Non-Admit/Other)",
+           level_2022 == "Graduate" |
+             level_2022 == "Law" ~
+             "Graduate or Law",
+           level_2022 == "Non-admit Graduate" ~
+             "Graduate (Non-Admit)",
+           level_2022 == "Undergraduate" ~
+             "Undergraduate"),
+         class_2021 = case_when(
+           class_2021 == "American English Institute" |
+             class_2021 == "Non-Admit Undergrad" ~
+             "Undergraduate (Non-Admit/Other)",
+           class_2021 == "Graduate" |
+             class_2021 == "Law" |
+             class_2021 == "1st Year Law" | 
+             class_2021 == "2nd Year Law" ~
+             "Graduate or Law",
+           class_2021 == "Non-Admit Grad" ~
+             "Graduate (Non-Admit)",
+           class_2021 == "Freshman" ~
+             "First-Year",
+           class_2021 == "Sophomore" ~
+             "Sophomore",
+           class_2021 == "Junior" ~
+             "Junior",
+           class_2021 == "Senior" ~
+             "Senior"),
+         class_2022 = case_when(
+           class_2022 == "American English Institute" |
+             class_2022 == "Non-Admit Undergrad" ~
+             "Undergraduate (Non-Admit/Other)",
+           class_2022 == "Graduate" |
+             class_2022 == "Law" |
+             class_2022 == "1st Year Law" | 
+             class_2022 == "2nd Year Law" |
+             class_2022 == "3rd Year Law" ~
+             "Graduate or Law",
+           class_2022 == "Non-Admit Grad" ~
+             "Graduate (Non-Admit)",
+           class_2022 == "Freshman" ~
+             "First-Year",
+           class_2022 == "Sophomore" ~
+             "Sophomore",
+           class_2022 == "Junior" ~
+             "Junior",
+           class_2022 == "Senior" ~
+             "Senior")
+         # ,
+         # gpa = ifelse(major == "|CEP|" & gpa == "0", NA, gpa) # AMY:  UPDATE PER RENEE ADVICE
+         ) %>%   
+  select(stu_2021, # select cleaned up vars and vars of interest
+         stu_2022,
+         id, 
+         arb_id,
+         uo_email_address, # will be used to link to Engage data (some 95#s are missing there)
+         gender, # some "_2022" vars will be specific to 21-22. Others are just gathered from 21-22 (e.g., DOB won't change from 21-22 to 22-23)
+         age_2021,
+         age_2022, 
+         age_today,
+         #dob,
+         race_eth,
+         res, 
+         parent_ed,
+         vet_type,
+         level_2021,
+         level_2022,
+         class_2021,
+         class_2022,
+         maj_2021,
+         maj_2022,
+         major,
+         coll_2021,
+         coll_2022,
+         college,
+         honors_college_2021,
+         honors_college_2022,
+         #honors_college_any,
+         gpa,
+         transfer_hours,
+         conf_ind) %>% 
+  filter(conf_ind == "N") # exclude all cases of conf_ind == Y, means their data CANNOT be used
+
+
+
+```
+
+```{r idr-checks-exploratory}
+
+# figured out I can't coalesce majors and colleges between the years. A substantial number of students in 21-22 went from having majors on their degree guides to being CEP students (college = unclassified). Since analyses will be split by year, going to have two vars for major and two vars for college. 
+
+idr_21_22_full %>% 
+  filter(college == "|UN|") %>% 
+  group_by(coll_2021, coll_2022, college) %>%
+  summarize(n = n())
+
+idr_21_22_full %>% 
+  filter(college == "|UN|") %>% 
+  group_by(maj_2021, maj_2022, major) %>% 
+  summarize(n = n())
+
+# check colleges
+
+idr_21_22_full %>% 
+  filter(college == "|UN|") %>% 
+  group_by(major) %>% 
+  summarize(n = n())
+
+idr_21_22_full %>% 
+  filter(coll_2021 == "|UN|" | coll_2022 == "|UN|") %>% 
+  group_by(stu_2021, stu_2022) %>% 
+  summarize(n = n())
+
+idr_21_22_full %>% 
+  filter(coll_2021 == "|UN|") %>% 
+  summarize(n = n())
+
+idr_21_22_full %>% 
+  filter(coll_2022 == "|UN|") %>% 
+  summarize(n = n())
+
+# check level and class recode
+
+idr_21_22_full %>% 
+  group_by(level_2021, class_2021) %>% 
+  summarize(n = n())
+
+idr_21_22_full %>% 
+  group_by(level_2022, class_2022) %>% 
+  summarize(n = n())
+
+# check honors college calculation and recode
+
+idr_21_22_full %>% 
+  group_by(honors_college_2021) %>% 
+  summarize(n = n())
+
+idr_21_22_full %>% 
+  group_by(honors_college_2022) %>% 
+  summarize(n = n())
+
+# checking colnames
+
+colnames(idr_21_22_full)
+
+# checking age cleaning worked (wanted a complete age as of today and separate ones for 2022 and 2021 in case I split data out)
+# age_today should equal age_2022 or (age_2021 + 1)
+
+idr_21_22_full %>% 
+  group_by(age_today, age_2022, age_2021) %>% 
+  summarize(n = n()) %>% 
+  print(n = 215)
+
+p <- idr_21_22_full %>% 
+  group_by(age_today) %>% 
+  summarize(n = n()) %>% 
+  ggplot(aes(x = age_today, y = n)) +
+  geom_col()
+
+# testing out basic ggplotly
+
+ggplotly(p)
+
+idr_21_22_full %>% 
+  ggplot(aes(y = age_today)) +
+  geom_boxplot() +
+  scale_x_discrete()
+
+
+
+```
+
+```{r join-tidy-idr-swasi}
+
+# join idr demos with swasi demos and clean 
+
+# recode/calculate/clean gender, gender+sexuality, race/ethnicity expanded, 
+# race/ethnicity combined/collapsed, OR residency status, nontraditional student status,
+# first-generation status (i.e., student is the first in their family to be completing a four-year degree or higher)
+
+idr_swasi <- idr_21_22_full %>% 
+ # mutate(id = as.integer(id)) %>% 
+  left_join(swasi_demos)
+
+demos <- idr_swasi %>% 
+  rename(cohort_swasi = cohort,
+         so = so_desc_bin_1) %>%  # rename SWaSI sexual orientation var
+  mutate(gender = # recode gender from UO application records
+           case_when(
+             gender == 'M' ~ 'Male', 
+             gender == 'F' ~ 'Female',
+             gender == 'N' ~ 'Nonbinary'),
+         gi_desc_bin_1 = # recode gender from SWaSI records
+           case_when(
+             gi_desc_bin_1 == 'Man' ~ 'Male',
+             gi_desc_bin_1 == 'Woman' ~ 'Female',
+             gi_desc_bin_1 == 'Nonbinary' ~ 'Nonbinary'),
+         gi = coalesce(gi_desc_bin_1, gender), # back-fill SWaSI w/ UO gender (SWaSI first b/c it's more inclusive)
+         gi_so = case_when(
+           gi == "Female" & 
+             so == "LGBQ+" ~ 
+             "LGBTQIA+",
+           gi == "Male" & 
+             so == "LGBQ+" ~ 
+             "LGBTQIA+",
+           gi == "Nonbinary" & 
+             is.na(so) ~ 
+             "LGBTQIA+",
+           gi == "Female" & 
+             so == "Straight or Heterosexual" ~ 
+             "Not LGBTQIA+",
+           gi == "Male" & 
+             so == "Straight or Heterosexual" ~ 
+             "Not LGBTQIA+",
+           gi == "Nonbinary" & 
+             so == "LGBQ+" ~ 
+             "LGBTQIA+",
+           gi == "Nonbinary" &
+             so == "Straight or Heterosexual" ~
+             "LGBTQIA+"),
+         re_exp = # recode race/eth from UO (these correspond to federal codes and some are outdated/not inclusive)
+           case_when(
+             race_eth == 
+               'American Indian or Alaska Native' ~ 
+               'Native American or Alaska Native',
+             race_eth == 
+               'Black or African American' ~ 
+               'Black',
+             race_eth == 
+               'Hispanic or Latino' ~ 
+               'Latin*', # OAR uses Latin* instead of Latinx, Hispanic/Latino, etc.
+             race_eth == 
+               'Nonresident alien' ~ 
+               'International',
+             race_eth == 
+               'Native Hawaiian or Other Pacific Islander' ~
+               'Native Hawaiian or Pacific Islander',
+             race_eth == 
+               'Two or more races' ~ 
+               'Multiracial/ethnic',
+             race_eth == 
+               'White' ~ 
+               'White',
+             race_eth == 
+               'Asian' ~ 
+               'Asian',
+             race_eth == 
+               'Race and ethnicity unknown' ~
+               'Unknown'),
+         re_comb = # Registrar prohibits reporting cell sizes < 10 (FERPA), so sometimes a collapsed race/eth var is needed
+           case_when(
+             re_exp == "Native American or Alaska Native" |
+               re_exp == "Latin*" |
+               re_exp == "Black" |
+               re_exp == "Asian" |
+               re_exp == "Native Hawaiian or Pacific Islander" ~
+               "Traditionally Marginalized", # OAR uses the term "Traditionally Marginalized Domestic Students" instead of "Minorities" etc.
+             re_exp == "Multiracial/ethnic" ~ 
+               "Multiracial/ethnic",
+             re_exp == "White" ~ 
+               "White",
+             re_exp == "International" ~ 
+               "International",
+             re_exp == "Unknown" ~
+               "Unknown"),
+         resident = ifelse(res == "Non-Resident", 
+                       "Non-Resident", 
+                       "OR Resident"),
+         fg = ifelse((parent_ed == "Bachelors Degree" |  
+                              parent_ed == "Masters Degree" |
+                              parent_ed == "Doctoral Degree"), 
+                           "Continuing-Generation", 
+                           "First-Generation"),
+         fg = coalesce(fg, fg_surv), # coalesce first-gen status from UO and SWaSI, deferring to UO records first
+         nontrad_21 = case_when(age_2021 < 18 |
+                                  age_2021 >= 24 |
+                                  vet_type == "Chapter 1606" |
+                                  vet_type == "Chapter 30" |
+                                  vet_type == "Chapter 31" |
+                                  vet_type == "Chapter 33" |
+                                  vet_type == "Choice Act Sect 702" |
+                                  transfer_hours > 30 ~ "Nontraditional"),
+         nontrad_21 = ifelse(stu_2021 == "yes",
+                             coalesce(nontrad_21, "Traditional"), 
+                             nontrad_21),
+         nontrad_22 = case_when(age_2022 < 18 |
+                                  age_2022 >= 24 |
+                                  vet_type == "Chapter 1606" |
+                                  vet_type == "Chapter 30" |
+                                  vet_type == "Chapter 31" |
+                                  vet_type == "Chapter 33" |
+                                  vet_type == "Choice Act Sect 702" |
+                                  transfer_hours > 30 ~ "Nontraditional"),
+         nontrad_22 = ifelse(stu_2022 == "yes",
+                             coalesce(nontrad_22, "Traditional"), 
+                             nontrad_22),
+         age_2022 = ifelse(stu_2022 == "yes", # fixing an issue due to reports exported 1 day apart
+                           age_today,
+                           age_2022),
+         age_binned_2021 = ifelse(age_2021 < 24, "23 or under", "24+"),
+         age_binned_2022 = ifelse(age_2022 < 24, "23 or under", "24+"))
+
+
+```
+
+```{r idr-swasi-demos-check}
+
+demos %>% 
+  group_by(age_binned_2021) %>% 
+  summarize(n = n(),
+            min = min(age_2021),
+            max = max(age_2021))
+
+demos %>% 
+  group_by(age_binned_2022) %>% 
+  summarize(n = n(),
+            min = min(age_2022),
+            max = max(age_2022))
+
+agecheck <- demos %>% 
+  group_by(age_2021,
+           age_2022,
+           age_today) %>% 
+  summarize(n = n())
+
+agecheckb <- demos %>% # check that led to fix above
+  filter(age_2022 != age_today) %>% 
+  select(age_2021, 
+         age_2022,
+         age_today)
+
+demos %>% 
+  group_by(stu_2021, stu_2022, nontrad_21) %>% 
+  summarize(n = n())  
+
+demos %>% 
+  group_by(stu_2021, stu_2022, nontrad_22) %>% 
+  summarize(n = n()) 
+
+demos %>% 
+  group_by(nontrad_21) %>% 
+  summarize(n = n()) 
+
+demos %>% 
+  group_by(nontrad_22) %>% 
+  summarize(n = n()) 
+
+demos %>% 
+  group_by(stu_2021, stu_2022, nontrad_21, nontrad_22) %>% 
+  summarize(n = n())
+
+nontrad_21check <- demos %>% 
+  group_by(vet_type, nontrad_21) %>% 
+  summarize(min_age = min(age_2021, na.rm = TRUE),
+            max_age = max(age_2021, na.rm = TRUE),
+            min_trns = min(transfer_hours, na.rm = TRUE),
+            n = n())
+
+nontrad_21checkb <- demos %>% 
+  filter(nontrad_21 == "Nontraditional" &
+           is.na(vet_type),  
+         age_2021 < 24) %>% 
+  select(age_2021, transfer_hours, nontrad_21)
+
+nontrad_chp35check <- demos %>% 
+  filter(nontrad_21 == "Nontraditional" &
+           vet_type == "Chapter 35",  
+         age_2021 < 24) %>% 
+  select(vet_type, age_2021, transfer_hours, nontrad_21)
+
+nontrad_change <- demos %>% #nontrad in 2021 (17 yo) and trad in 2022 (18 yo)
+  filter(nontrad_21 == "Nontraditional" & nontrad_22 == "Traditional") %>% 
+  select(age_2021, age_2022, nontrad_21, nontrad_22)
+
+nontrad_changeb <- demos %>% #trad in 2021 (23 yo) and nontrad in 2022 (24 yo)
+  filter(nontrad_21 == "Traditional" & nontrad_22 == "Nontraditional") %>% 
+  select(age_2021, age_2022, nontrad_21, nontrad_22)
+            
+fgcheck <- demos %>% 
+  group_by(parent_ed, fg_surv, fg) %>% 
+  summarize(n = n())
+
+rsdncycheck <- demos %>% 
+  group_by(res, resident) %>% 
+  summarize(n = n())
+  
+
+gendercheck <- demos %>% 
+  group_by(gi_desc_bin_1, gender, gi) %>% 
+  summarize(n = n())
+
+gisocheck <- demos %>% 
+  group_by(gi, so, gi_so) %>% 
+  summarize(n = n())
+
+recheck <- demos %>% 
+  group_by(race_eth, re_exp, re_comb) %>% 
+  summarize(n = n())
+```
+
+```{r join-demos-engage}
+
+colnames(demos)
+
+demos_narrowed <- demos %>% 
+  select(id,
+         uo_email_address,
+         conf_ind,
+         stu_2021,
+         stu_2022,
+         cohort_swasi,
+         level_2021,
+         level_2022,
+         class_2021,
+         class_2022,
+         age_2021,
+         age_2022,
+         age_binned_2021,
+         age_binned_2022,
+         age_today,
+         #dob,
+         gi, # gender id (female, male, or nonbinary)
+         so, # sexual orientation (LGBQ+ or not)
+         gi_so, # gender + sexual orientation (LBGTQIA+ or not)
+         re_exp, # race/eth expanded
+         re_comb, # race/eth collapsed
+         resident, # residency status
+         fg, # first-generation status (based on parent/guardian education)
+         nontrad_21, # nontrad status 2021-2022
+         nontrad_22, # nontrad status 2022-2023
+         sss, # global ses status (numeric)
+         sss_desc, # global ses status descriptor
+         sss_desc_bin, # global ses descriptor binned
+         fsc, # family ses (numeric)
+         fsc_desc, # family ses descriptor
+         fsc_desc_bin, # family ses descriptor binned
+         maj_2021,
+         maj_2022,
+         major,
+         coll_2021,
+         coll_2022,
+         college,
+         honors_college_2021,
+         honors_college_2022,
+         #honors_college_any,
+         gpa)
+
+  
+colnames(demos_narrowed)  
+
+colnames(users_involved_all)
+
+ff_glimpse(users_involved_all)
+
+engage_users <- users_involved_all %>% # select vars of interest - turned out many fields were empty or mostly missing
+  select(card_id,
+         campus_email,
+         organization_id,
+         organization_name,
+         organization_type,
+         organization_status,
+         position_name,
+         position_template,
+         position_start_date,
+         position_end_date)
+
+# join engage invovled users with demos from IDR and SWaSI
+# left join b/c I want to preserve all rows in engage users because it is one row per membership/position, not one row per student
+
+engage_users_demos <- engage_users %>% 
+  left_join(demos_narrowed, 
+            by = c("campus_email" = "uo_email_address"), # join by UO email b/c some IDs are missing
+            keep = TRUE,
+            na_matches = "never") # DO NOT MATCH emails that are NA
+
+```
+
+```{r joined-demos-engage-checks}
+
+colnames(engage_users_demos)
+
+# any IDs that don't match? no
+
+engage_users_demos %>% 
+  filter(card_id != id)
+
+# how many matches were there - 22996 students 
+
+engage_users_demos %>% 
+  filter(stu_2021 == "yes" | stu_2022 == "yes") %>% 
+  group_by(id) %>% 
+  summarize(n = n())
+
+# is that number if different if I match by ID? No
+
+engage_users_demos2 <- engage_users %>% 
+  left_join(demos, 
+            by = c("card_id" = "id"), 
+            keep = TRUE,
+            na_matches = "never") 
+
+# yes - 22091 stus. Stick with matching by official UO email. 
+
+engage_users_demos2 %>% 
+  filter(stu_2021 == "yes" | stu_2022 == "yes") %>% 
+  group_by(id) %>% 
+  summarize(n = n())
+
+```
+
+```{r engage-filtering-more-cleaning}
+
+# filter to records of 21-22 and/or 22-23 students
+
+engage_users_demos_21_22 <- engage_users_demos %>% 
+  filter(stu_2021 == "yes" | stu_2022 == "yes")
+
+# explore
+  
+ff_glimpse(engage_users_demos_21_22)
+
+unique(engage_users_demos_21_22$organization_type)
+
+engage_users_demos_21_22 %>% 
+  group_by(organization_type) %>% 
+  summarize(n = n())
+
+# Julie Scroggins wasn't sure what "Default" orgs were. They look legitimate - sports and Fraternity/Sorority Life (FSL). 
+
+engage_users_demos_21_22 %>% 
+  filter(organization_type == "Default") %>% 
+  group_by(organization_name) %>% 
+  summarize(n = n())
+
+engage_users_demos_21_22 %>% 
+  filter(organization_type == "Default") %>% 
+  distinct(organization_name)
+
+# examine statuses and member ns - per Julie, exclude those that are inactive or frozen
+
+engage_users_demos_21_22 %>% 
+  group_by(organization_status) %>% 
+  summarize(n = n())
+
+# examine position templates
+
+unique(engage_users_demos_21_22$position_template)
+
+engage_users_demos_21_22 %>% 
+  filter(position_template == "UO Employee")  
+
+# Per Julie Scroggins, exclude the following org types, org statuses, and position type
+
+engage_users_demos_21_22b <- engage_users_demos_21_22 %>% 
+  filter(organization_type != "Branch",
+         organization_type != "Closed Branch Organizations",
+         organization_type != "Department/Non-Student Org",
+         organization_type != "Hidden",
+         organization_type != "Operational", # this what the UO Employees were under
+         organization_type != "UO Affiliated Organization",
+         organization_type != "Test Pages",
+         organization_status != "Frozen",
+         organization_status != "Inactive",
+         position_template != "Advisor",
+         position_template != "Primary Contact") %>% # Primary contacts will hold some other position in the org
+  mutate(start_date = mdy(position_start_date),
+         end_date = mdy(position_end_date),
+         position_binned = case_when(
+           position_template == "Member" ~
+             "Member",
+           position_template == "Student Org Officer general- Independent SO" |
+             position_template == "Student Org Officer 2- Independent SO" |
+             position_template == "Student Org Officer 1- Independent SO" |
+             position_template == "Treasurer/Finance Position" |
+             position_template == "Media/PR/Webmaster" |
+             position_template == "Student Activities Board Officer" |
+             position_template == "Chapter Officer" |
+             position_template == "Event Planner" |
+             position_template == "Officer" |
+             position_template == "General Leadership Position" |
+             position_template == "Executive Cabinet Member" |
+             position_template == "Student Leader- Dept Reporting Org" ~
+             "Officer or Other Leadership Position",
+           position_template == "Vice-President/Co-Director" ~
+             "Vice-President or Co-Director",
+           position_template == "President/Director" |
+             position_template == "President"   ~
+             "President or Director",
+           # position_template == "Organization Created" ~
+           #   "Other Officer or Leadership Position",
+           position_template == "ASUO Senator" ~
+             "ASUO Senator",
+           position_template == "ASUO Finance Committee Member" ~
+             "ASUO Finance Committee Member",
+           position_template == "ASUO Vice-President" ~
+             "ASUO Vice-President",
+           position_template == "ASUO President" ~
+             "ASUO President",
+           position_template == "Organization Created" & 
+             position_name == "Chapter President" ~
+             "President or Director",
+           position_template == "Organization Created" & 
+             position_name == "Chapter Vice-President" ~
+             "President or Director",
+           position_template == "Organization Created" & 
+             position_name == "Co President/Director" ~
+             "President or Director",
+           position_template == "Organization Created" & 
+             position_name == "Co-Director" ~
+             "President or Director",
+           position_template == "Organization Created" & 
+             position_name == "Co-President" ~
+             "President or Director",
+           position_template == "Organization Created" & 
+             position_name == "Director" ~
+             "President or Director",
+           position_template == "Organization Created" & 
+             position_name == "President" ~
+             "President or Director",
+           position_template == "Organization Created" & 
+             position_name == "President " ~
+             "President or Director",
+           position_template == "Organization Created" & 
+             position_name == "President/ Chief Operating Officer" ~
+             "President or Director",
+           position_template == "Organization Created" & 
+             position_name == "President/Co-Director" ~
+             "President or Director",
+           position_template == "Organization Created" & 
+             position_name == "President/Director" ~
+             "President or Director",
+           position_template == "Organization Created" & 
+             position_name == "Student Leader- Vice President" ~
+             "Vice-President or Co-Director",
+           position_template == "Organization Created" & 
+             position_name == "Vice President" ~
+             "Vice-President or Co-Director",
+           position_template == "Organization Created" & 
+             position_name == "Vice President " ~
+             "Vice-President or Co-Director",
+           position_template == "Organization Created" & 
+             position_name == "Vice-President" ~
+             "Vice-President or Co-Director",
+           position_template == "Organization Created" & 
+             position_name == "Vice-President/Co-Director" ~
+             "Vice-President or Co-Director"),
+         position_binned = coalesce(position_binned, "Officer or Other Leadership Position"),
+         position_binned2 = ifelse(position_binned == "Member", 
+                                   "Member", 
+                                   "Officer or Leadership Position")) %>% 
+  filter(end_date > "2021-09-27" | # exclude any records with end dates before first day Fall 2021 
+           is.na(end_date)) %>%  # but keep records that don't have end dates recorded
+  select(-position_start_date,
+         -position_end_date,
+         -card_id)
+
+
+# "Organization Created" means that the org opted to assign a position role that wasn't automatically listed. Some of these are leadership roles that need recoding - specifically the vice president and president positions. 
+# These were run BEFORE I updated the code above to recode the vice president/president/director/co-director positions as appropriate. 
+
+engage_users_demos_21_22b %>% 
+  filter(position_template == "Organization Created") %>% 
+  group_by(position_template, position_name, position_binned, ) %>% 
+  summarize(n = n()) %>% 
+  print(n = 336)
+
+positions_other <- engage_users_demos_21_22b %>% 
+  filter(position_template == "Organization Created") %>% 
+  group_by(position_name) %>% 
+  summarize(n = n())
+
+engage_users_demos_21_22b %>% 
+  filter(position_template == "Organization Created") %>% 
+  distinct(position_name)
+
+engage_users_demos_21_22b %>% 
+  filter(position_template == "Organization Created") %>% 
+  filter(str_detect(position_name, "President")) %>% 
+  group_by(position_name, position_template) %>% 
+  summarize(n = n())
+
+```
+
+```{r engage-filtering-more-cleaning-checks}
+
+# some checks 
+
+end_date_check <- engage_users_demos_21_22b %>% 
+  filter(end_date > "2021-09-27") %>% 
+  select(position_template, end_date)
+
+n_distinct(engage_users_demos_21_22$id)
+
+n_distinct(engage_users_demos_21_22b$id)
+
+ff_glimpse(engage_users_demos_21_22b)
+
+engage_users_demos_21_22b %>% 
+  group_by(organization_name) %>% 
+  summarize(n = n())
+
+engage_users_demos_21_22b %>% 
+  group_by(position_template) %>% 
+  summarize(n = n())
+
+engage_users_demos_21_22b %>% 
+  group_by(position_binned) %>% 
+  summarize(n = n())
+
+engage_users_demos_21_22b %>% 
+  group_by(position_binned2) %>% 
+  summarize(n = n())
+
+engage_users_demos_21_22b %>% 
+  group_by(position_binned2, position_binned, position_template) %>% 
+  summarize(n = n()) %>% 
+  print(n = 22)
+
+
+engage_users_demos_21_22b %>% 
+  filter(stu_2022 == "yes") %>% 
+  group_by(position_binned2,
+           re_comb) %>% 
+  summarize(n = n()) 
+
+engage_users_demos_21_22b %>% 
+  filter(stu_2022 == "yes") %>% 
+  group_by(position_binned2,
+           gi) %>% 
+  summarize(n = n()) 
+
+engage_users_demos_21_22b %>% 
+  filter(stu_2022 == "yes") %>% 
+  group_by(position_binned2,
+           fg) %>% 
+  summarize(n = n()) 
+
+unique(engage_users_demos_21_22b$organization_name)
+
+
+```
+
+```{r major-college-clean}
+# UO abbreviates majors and colleges in records. Additionally the fields are "packed," meaning that if a student has more than one major, the majors are listed together in the same column, as are the colleges associated with each major. The major and college abbreviations are formatted with a vertical bar (|) on each side and/or between multiples (e.g., |GSS|, |LING|CINE|). In order to match the abbreviations to the full names, I need to (a) remove the bars at the front and end and then (b) split the columns by the remaining vertical bars (e.g., |LING|CINE| would be split into two columns, containing LING and CINE).
+
+# step 1 - replace vertical bars at front and end with nothing, separate the major and college cols, fill blanks (generated in the cases of ||, which popped in the 202202 IDR report) with NA
+
+engage_users_demos_21_22c <- engage_users_demos_21_22b %>% 
+  mutate(major = str_replace_all(major, 
+                                 "^[\\|]{1,2}|[\\|]$",
+                                 ""), # some inexplicably started with two bars
+         maj_2021 = str_replace_all(maj_2021, 
+                                    "^[\\|]{1,2}|[\\|]$",
+                                    ""), # some inexplicably started with two bars
+         maj_2022 = str_replace_all(maj_2022, 
+                                    "^[\\|]{1,2}|[\\|]$",
+                                    ""), # some inexplicably started with two bars
+         coll_2021 = str_replace_all(coll_2021, 
+                                     "^[\\|]{1,2}|[\\|]$", 
+                                     ""),
+         coll_2022 = str_replace_all(coll_2022, 
+                                     "^[\\|]{1,2}|[\\|]$", 
+                                     ""),
+         college = str_replace_all(college, 
+                                   "^[\\|]{1,2}|[\\|]$", 
+                                   "")) %>%  # missing was indicated with two bars
+  separate(col = major,
+           sep = "\\|", 
+           into = c("major1", "major2", "major3"), 
+           remove = FALSE) %>% 
+   separate(col = maj_2021,
+           sep = "\\|", 
+           into = c("major1_21", "major2_21", "major3_21"), 
+           remove = FALSE) %>% 
+   separate(col = maj_2022,
+           sep = "\\|", 
+           into = c("major1_22", "major2_22", "major3_22"), 
+           remove = FALSE) %>% 
+  separate(col = coll_2021, 
+           sep = "\\|", 
+           into = c("college1_21", "college2_21", "college3_21"), 
+           remove = FALSE) %>% 
+  separate(col = coll_2022, 
+           sep = "\\|", 
+           into = c("college1_22", "college2_22", "college3_22"), 
+           remove = FALSE) %>% 
+  separate(col = college, 
+           sep = "\\|", 
+           into = c("college1", "college2", "college3"), 
+           remove = FALSE) %>% 
+  mutate(across(c(major, 
+                  maj_2021,
+                  maj_2022,
+                  college, 
+                  coll_2021,
+                  coll_2022,
+                  major1, 
+                  major2, 
+                  major3, 
+                  major1_21, 
+                  major2_21, 
+                  major3_21,
+                  major1_22, 
+                  major2_22, 
+                  major3_22,
+                  college1, 
+                  college2, 
+                  college3,
+                  college1_21, 
+                  college2_21, 
+                  college3_21,
+                  college1_22, 
+                  college2_22, 
+                  college3_22), 
+                ~ na_if(., "")),
+         college1_22 = ifelse(major1_22 == "DSCI" & is.na(college1_22),"AS", college1_22), # 202202 IDR report had issues with majors and colleges of majors  
+         college1_22 = ifelse(major1_22 == "ENV" & is.na(college1_22),"AS", college1_22),
+         college1_22 = ifelse(major1_22 == "EXPL" & is.na(college1_22),"AS", college1_22),
+         college1_22 = ifelse(major1_22 == "NEUR" & is.na(college1_22),"AS", college1_22),
+         college1_22 = ifelse(major1_22 == "PBA" & is.na(college1_22),"BA", college1_22),
+         college1_22 = ifelse(major1_22 == "PJ" & is.na(college1_22),"JO", college1_22),
+         major_mult_21 = ifelse(is.na(major1_21), 
+                                "no",
+                                ifelse(!is.na(major1_21) & is.na(major2_21), 
+                                       "Single Major", 
+                                       "Multiple Majors")),
+         major_mult_22 = ifelse(is.na(major1_22), 
+                                "no",
+                                ifelse(!is.na(major1_21) & is.na(major2_21), 
+                                       "Single Major", 
+                                       "Multiple Majors")))
+```
+
+```{r major-college-clean-checks}
+# checks
+
+majors_orig <- engage_users_demos_21_22b %>% 
+  distinct(major)
+
+majors_updated <- engage_users_demos_21_22c %>% 
+  distinct(major)
+
+# majors_check <- engage_users_demos_21_22c %>% 
+#   group_by(major, major1, major2, major3, major_mult) %>% 
+#   summarize(n = n())
+# 
+# colleges_check <- engage_users_demos_21_22c %>% 
+#   group_by(college, college1, college2, college3) %>% 
+#   summarize(n = n())
+
+engage_users_demos_21_22b$maj_2021
+engage_users_demos_21_22c$major # success
+
+engage_users_demos_21_22b$coll_2021
+engage_users_demos_21_22c$college # success
+```
+
+
+```{r join-org-shortnames-parentorgs}
+
+engage_users_demos_21_22d <- engage_users_demos_21_22c %>% 
+  left_join(select(org_directory,
+                   organization_id,
+                   parent_organization, 
+                   short_name),
+            by = "organization_id",
+            na_matches = "never") %>% 
+  mutate(organization_name = str_to_title(organization_name),
+         short_name = ifelse(parent_organization == "Club Sports",
+                             str_to_title(short_name),
+                             short_name),
+         short_name = coalesce(short_name, # short_name missing for some orgs. Back-fill with full org name.
+                               organization_name))
+  
+```
+
+
+```{r subset-split-year}
+# create dataframe of students who were active at some point during the 21-22 academic year
+
+engage_2021 <- engage_users_demos_21_22d %>% 
+  filter(stu_2021 == "yes" & 
+           start_date < "2022-09-27" & # joined before start of 22-23
+           (is.na(end_date) | end_date < "2022-09-27")) %>% # no end date or ended during 21-22
+  mutate(position_status_2021 = ifelse(!is.na(end_date), 
+                                       "ended", # position was active but then ended at some point during 21-22
+                                       "active")) # did not end position during 21-22
+
+
+# create dataframe of students who were active at some point during the 22-23 academic year
+
+
+engage_2022 <- engage_users_demos_21_22d %>% 
+  filter(stu_2022 == "yes" & 
+           (is.na(end_date) | end_date > "2022-09-26")) %>%  # end date after start of Fall 2022 (end dates earlier than that would fall in the 21-22 group)
+   mutate(position_status_2022 = ifelse(!is.na(end_date), 
+                                       "ended", # position was active but then ended at some point during 21-22
+                                       "active")) # did not end position during 21-22
+```
+
+```{r major-college-join-descriptions}
+# step 2 - join with the major and college crosswalk files containing the descriptions for each abbreviation
+
+engage_2021_clean <- engage_2021 %>% 
+  left_join(major_xwalk, 
+            by = c("major1_21" = "major"), 
+            na_matches = "never") %>% 
+  left_join(college_xwalk, 
+            by = c("college1_21" = "college"), 
+            na_matches = "never") %>% 
+  rename("major1_21_desc" = "major_desc",
+         "college1_21_desc" = "college_desc")
+
+engage_2022_clean <- engage_2022 %>% 
+  left_join(major_xwalk, 
+            by = c("major1_22" = "major"), 
+            na_matches = "never") %>% 
+  left_join(college_xwalk, 
+            by = c("college1_22" = "college"), 
+            na_matches = "never") %>% 
+  rename("major1_22_desc" = "major_desc",
+         "college1_22_desc" = "college_desc")
+
+```
+
+
+```{r save-clean-files}
+
+saveRDS(engage_2021_clean, file = here("data", "engage_2021_clean.rds"))
+
+saveRDS(engage_2022_clean, file = here("data", "engage_2022_clean.rds"))
+
+```
+
+
+
+```{r major-college-join-descriptions-checks}
+
+# collegemajor_check <- engage_users_demos_21_22d %>% 
+#   group_by(major1_21, college1_21) %>% 
+#   summarize(n = n())
+# 
+# collegemajor_desc_check <- engage_users_demos_21_22d %>% 
+#   group_by(major1_21_desc, college1_21_desc) %>% 
+#   summarize(n = n())
+# 
+# collegemajor_check22 <- engage_users_demos_21_22d %>% 
+#   group_by(major1_22, college1_22) %>% 
+#   summarize(n = n())
+# 
+# collegemajor_desc_check22 <- engage_users_demos_21_22d %>% 
+#   group_by(major1_22_desc, college1_22_desc) %>% 
+#   summarize(n = n())
+
+# used this to troubleshoot majors that had NA for college when they shouldn't. Resolved using code above.
+
+# collegemajor_check %>% 
+#   group_by(major1) %>% 
+#   summarize(n = n()) %>% 
+#   filter(n > 1)
+
+# major to major description check
+# 
+# majorxdesc_check <- engage_users_demos_21_22d %>% 
+#   group_by(major1, major1_desc) %>% 
+#   summarize(n = n())
+# 
+# # some were initially missing. I fixed these in my major crossalk file. This was the code I used to check.
+# 
+# major_majordesc_na <- majorxdesc_check %>% 
+#   filter(is.na(major1_desc))
+# 
+# major_majordesc_na$major1
+
+# Code below was for investigating issues with mismatched major/colleges (an issue due to 202202 IDR report and order of coalescing in initial cleaning)
+
+# engage_users_demos_21_22d %>% 
+#   filter(major1 == "ART" & college1 == "BA") %>% 
+#   select(id)
+# 
+# college_major_orig <- engage_users_demos_21_22b %>%
+#   group_by(major, college) %>%
+#   summarize(n = n())
+
+# engage_users_demos_21_22b %>% 
+#   filter(major == "|BADM|EC|" & college == "||AS|") %>% 
+#   select(id)
+
+# college_major_202201 <- idr_202201 %>% 
+#   group_by(all_packed_dg_majors, all_packed_dg_major_colls) %>% 
+#   summarize(n = n())
+
+# used this to look for missing colleges and then addressed in code above
+# 
+# college_na <- engage_users_demos_21_22d %>% # some colleges from 202202 IDR file were missing when they shouldn't be
+#   filter(is.na(college1)) %>% 
+#   group_by(stu_2021, stu_2022, major1, major1_desc) %>% 
+#   summarize(n = n())
+# 
+# # identified colleges that had missing descriptions in crosswalk (KC = Knight Campus, GR = Graduate School) and resolved
+# 
+# collegedesc_na <- engage_users_demos_21_22d %>% 
+#   filter(is.na(college1_desc)) %>% 
+#   group_by(college1, college1_desc, major1, major1_desc) %>% 
+#   summarize(n = n())
+# 
+# engage_users_demos_21_22d %>% 
+#   filter(major1 == "BIKC") %>% 
+#   group_by(college1) %>% 
+#   summarize(n = n())
+
+# following majors from 202202 file had missing associated colleges
+
+# college_na_lookup <- engage_users_demos_21_22d %>% 
+#   filter(major1 == "DSCI" |major1 == "ENV" | major1 == "EXPL" | 
+#            major1 == "NEUR" | major1 == "PBA" | major1 == "PJ") %>% 
+#   group_by(major1, college1) %>% 
+#   summarize(n = n())
+# 
+# college_na_lookup %>% 
+#   select(major1, college1)
+# 
+
+```
+
+```{r college-unclassified-issues"}
+
+
+  
+# engage_2021_clean %>% 
+#   distinct(id, .keep_all = TRUE) %>% # filter to one row per student
+#   group_by(level_2021, college1) %>% 
+#   summarize(n = n()) %>% 
+#   print(n = 26)
+# 
+# engage_2021_clean %>% 
+#   distinct(id, .keep_all = TRUE) %>% # filter to one row per student
+#   filter(college1 == "UN") %>% 
+#   group_by(major1_desc, level_2021, class_2021) %>% 
+#   summarize(n = n(),
+#             min = min(age_2021),
+#             mean = mean(age_2021),
+#             max = max(age_2021))
+
+# why are there so many students with college = "Unclassified" in 21-22
+
+engage_2021_clean %>% 
+  distinct(id, .keep_all = TRUE) %>% # filter to one row per student
+  filter(college1_21 == "UN") %>% 
+  summarize(n = n())
+
+engage_2021_clean %>% 
+  distinct(id, .keep_all = TRUE) %>% # filter to one row per student
+  filter(college1_21_desc == "Unclassified") %>% 
+  summarize(n = n())
+
+engage_2022_clean %>% 
+  distinct(id, .keep_all = TRUE) %>% # filter to one row per student
+  filter(college1_22 == "UN") %>% 
+  summarize(n = n())
+
+engage_2022_clean %>% 
+  distinct(id, .keep_all = TRUE) %>% # filter to one row per student
+  filter(college1_22_desc == "Unclassified") %>% 
+  summarize(n = n())
+
+# inspect further
+
+engage_2021_clean %>% 
+  distinct(id, .keep_all = TRUE) %>% # filter to one row per student
+  filter(college1_21 == "UN") %>%   
+  group_by(major1_21_desc, level_2021, class_2021) %>% 
+  summarize(n = n(),
+            min = min(age_2021),
+            mean = mean(age_2021),
+            max = max(age_2021))
+
+idr_202102 %>% 
+  filter(all_packed_dg_major_colls == "|UN|") %>% 
+  group_by(student_level_desc, student_class_boap_desc) %>% 
+  summarize(n = n())
+
+idr_202103 %>% 
+  filter(all_packed_dg_major_colls == "|UN|") %>% 
+  group_by(student_level_desc, student_class_boap_desc) %>% 
+  summarize(n = n())
+
+idr_21_22_full %>% 
+  filter(coll_2021 == "|UN|") %>% 
+  group_by(level_2021, class_2021) %>% 
+  summarize(n = n())
+
+View(idr_21_22_full)
+
+
+# with major
+
+idr_202102 %>% 
+  filter(all_packed_dg_major_colls == "|UN|") %>% 
+  group_by(all_packed_dg_majors, student_level_desc, student_class_boap_desc) %>% 
+  summarize(n = n())
+
+idr_202103 %>% 
+  filter(all_packed_dg_major_colls == "|UN|") %>% 
+  group_by(all_packed_dg_majors, student_level_desc, student_class_boap_desc) %>% 
+  summarize(n = n())
+
+ 
+# misc check
+
+
+engage_2021_clean %>% 
+  distinct(id, .keep_all = TRUE) %>% # filter to one row per student
+  group_by(gi, so, gi_so) %>% 
+  summarize(n = n())
+
+
+      # tabyl(fg, show_na = FALSE) %>%  
+    # mutate(Category = "First-Generation Status") %>% 
+    # rename(Subcategory = fg)
+  
+  
+```
+
+```{r gpa-zero}
+
+# To be resolved per Renee decision/input. In orig data, thousands of CEP students have GPAs of 0, which does not seem right. Wondering if there is some default issue happening in UO records. 
+
+engage_2021_clean %>% 
+  filter(gpa == "0") %>% 
+  distinct(id, .keep_all = TRUE) %>% 
+  group_by(major1_21_desc) %>% 
+  summarize(n = n()) %>% 
+  #filter(major1_desc == "Community Education Program") # highest n = 4029 - doesn't seem right
+  #filter(major1_desc == "Psychology") # second highest n = 12, seems more reasonable
+  ggplot(aes(y = reorder(major1_21_desc, n), x = n)) +
+  geom_col()
+
+
+```
+
+```{r subset-split-year-checks}
+
+# check subsetting and new var (position status)
+
+status2021_check <- engage_2021_clean %>% 
+  filter(position_status_2021 == "ended") %>% 
+  select(position_status_2021, stu_2021, start_date, end_date)
+
+engage_2021_clean %>% 
+  group_by(position_status_2021) %>% 
+  summarize(min_start = min(start_date),
+            max_start = max(start_date),
+            min_end = min(end_date),
+            max_end = max(end_date))
+
+status2022_check <- engage_2022_clean %>% 
+  filter(position_status_2022 == "ended") %>% 
+  select(position_status_2022, stu_2022, start_date, end_date)
+
+engage_2022_clean %>% 
+  group_by(position_status_2022) %>% 
+  summarize(min_start = min(start_date),
+            max_start = max(start_date),
+            min_end = min(end_date),
+            max_end = max(end_date))
+
+```
+
+```{r older-cleaning-exploration1}
+# 
+# # list of orgs and ns (note: contains duplicate students)
+# 
+# orgs <- users_involved_20230124 %>% 
+#   group_by(organization_name) %>% 
+#   summarize(n = n())
+# 
+# org_types <- users_involved_20230124 %>% 
+#   group_by(organization_type) %>% 
+#   summarize(n = n())
+# 
+# 
+# # users_involved %>% 
+# #   group_by()
+# 
+# ff_glimpse(users_involved_20230124)
+# 
+# ff_glimpse(users_all)
+# 
+# table(users_involved_20230124$organization_status)
+# 
+# table(users_involved_20230124$organization_status)
+# table(users_involved_20230124$position_name)
+# table(users_involved_20230124$position_template)
+# 
+# position_templates <- users_involved_20230124 %>% 
+#   group_by(position_template) %>% 
+#   summarize(n = n()) 
+# 
+# #write.csv(position_templates, "users_involved_position_templates.csv")
+#  
+# 
+```
+
+```{r older-cleaning-exploration2}
+# 
+# users_involved_20230124 <- users_involved_20230124 %>% 
+#   mutate(start_date = mdy(position_start_date),
+#          year = year(start_date),
+#          year = recode(year,
+#                        "2012" = "2012-2013",
+#                        "2013" = "2013-2014",
+#                        "2014" = "2014-2015", 
+#                        "2015" = "2015-2016",
+#                        "2016" = "2016-2017",
+#                        "2017" = "2017-2018",
+#                        "2018" = "2018-2019",
+#                        "2019" = "2019-2020",
+#                        "2020" = "2020-2021",
+#                        "2021" = "2021-2022",
+#                        "2022" = "2022-2023"))
+# 
+# users_involved_20230124 %>% 
+#   ggplot(aes(x = as.factor(year))) +
+#   geom_bar(fill = "#446455",
+#            color = "white",
+#            alpha = .8) +
+#   coord_cartesian(ylim = c(0, 16000)) +
+#   scale_x_discrete(expand = c(0, 0)) +
+#   scale_y_continuous(expand = c(0, 0),
+#                      labels = label_comma()) +
+#   labs(y = "Number of Members",
+#        x = "") +
+#   theme_minimal(14) +
+#   theme(panel.grid.major.x = element_blank(),
+#         panel.grid.minor.x = element_blank())
+
+
+#        axis.title.y = element_markdown(color = "#446455"),
+#        axis.text.y = element_markdown(color = testingc))
+# 
+# testingc <- c("black", "red", "green", "blue", "yellow")
+```
+
+```{r older-cleaning-exploration3}
+# 
+# orgs_asuo %>% 
+#   filter(active_member_count > 1,
+#          organization_type != "Hidden",
+#          organization_type != "Test Pages") %>% 
+#   ggplot(aes(x = active_member_count, 
+#              y = reorder(organization_name, active_member_count),
+#              fill = organization_type)) +
+#   geom_col()
+
+
+#  facet_wrap(~ organization_type)
+
+```
+
+```{r older-cleaning-exploration4}
+# 
+# positions_asuo %>% 
+#   filter(is.na(campus_email)) %>% 
+#   summarize(n = n())
+# 
+# asuo_members <- positions_asuo %>% 
+#   filter(!is.na(campus_email)) %>% 
+#   left_join(idr_202202, by = c("campus_email" = "uo_email_address"))
+# 
+# asuo_members %>% 
+#   filter(is.na(academic_period)) %>% 
+#   summarize(n = n())
+# 
+# idr_202202 %>% 
+#   group_by(student_level_desc) %>% 
+#   summarize(n = n())
+# 
+# asuo_members %>% 
+#   filter(!is.na(academic_period)) %>% 
+#   group_by(position_name) %>% 
+#   summarize(n = n())
+#             
+# asuo_members_unique_202202 <- asuo_members %>% 
+#   filter(!is.na(academic_period)) %>% 
+#   group_by(id) %>% 
+#   summarize(n = n())
+# 
+# asuo_members %>% 
+#   group_by(organization_name) %>% 
+#   summarize(avg_gpa = mean(cum_gpa_as_of_today, na.rm = TRUE)) %>% 
+#   ggplot(aes(x = avg_gpa,
+#              y = reorder(organization_name, avg_gpa))) +
+#   geom_point()
+# 
+# mean(idr_202103$cum_gpa_as_of_today, na.rm = TRUE)
+# 
+# asuo_members %>% 
+#   group_by(federal_ethnic_desc) %>% 
+#   summarize(n = n())
+# 
+# asuo_members2 %>% 
+#   group_by(student_level_desc) %>% 
+#   summarize(n = n())
+# 
+# asuo_nonadmitgrads <- asuo_members %>% 
+#   filter(student_level_desc == "Non-admit Graduate") %>% 
+#   group_by(campus_email) %>% 
+#   summarize(n = n())
+# 
+# orgs_asuo %>% 
+#   filter(status == "Active",
+#          active_member_count > 10) %>% 
+#   treemap(index = "short_name",
+#           vSize = "active_member_count")
+#   
+
+```
+
